@@ -20,9 +20,7 @@ http::HttpRequestParser / http::HttpResponseWriter（http/）
 - `http_client_upstream.hpp`：把 `HttpClientSession` 适配成 `proxy::UpstreamClient`。
 - `http_response_sink.hpp`：把 `HttpResponseWriter` 适配成 `proxy::DownstreamSink`。
 - `eventloop_task_runner.hpp`：把 `Eventloop::QueueInLoop` 适配成 `proxy::TaskRunner`。
-- `host_resolver_test.cc`：解析器的本地测试。
-- `../example/http_server_test.cc`：最小服务端示例，提供 `/healthz` 和 `/echo`。
-- `../example/http_client_test.cc`：回环客户端测试。
+- `../example/http_server_test.cc`：最小服务端示例，提供 `/healthz`、`/echo` 和 `/auth`。
 - `../example/stunnel-deepseek.conf`：TLS sidecar 配置示例。
 - `../gateway/README.md`：网关鉴权和上游 key 注入。
 
@@ -39,29 +37,15 @@ make
 
 ```bash
 make run
-make asan   # 构建带 ASan/UBSan 的 server/client
 ```
 
-## 测试
+## 手动验证
 
 ```bash
 curl -v --http1.1 http://127.0.0.1:8080/healthz
 curl -v -X POST -H 'Content-Type: application/json' \
      -d '{"a":1}' http://127.0.0.1:8080/echo
 curl -v http://127.0.0.1:8080/healthz http://127.0.0.1:8080/healthz
-```
-
-客户端回环：
-
-```bash
-./build/http_server_test 18889 &
-./build/http_client_test 18889
-```
-
-解析器测试：
-
-```bash
-make resolver-test
 ```
 
 ## 域名解析

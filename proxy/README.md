@@ -18,7 +18,6 @@
 - `ports.hpp`：`UpstreamClient` / `DownstreamSink` / `TaskRunner` 三个端口
 - `proxy_session.hpp`：一次代理请求的状态机，只依赖 `ports.hpp` + `http_message.hpp`
 - `proxy_manager.hpp`：持有活跃 ProxySession，管理生命周期
-- `proxy_session_test.cc`：用 fake upstream/downstream 的纯单测
 - `../example/proxy_server_test.cc`：最小代理服务端示例
 - `../example/stunnel-deepseek.conf`：TLS sidecar 配置示例
 - `../gateway/`：网关 key 校验和 provider key 注入
@@ -116,17 +115,6 @@ curl -N -H "Authorization: Bearer $GATEWAY_API_KEY" \
 
 客户端只发网关 key，不会看到 `DEEPSEEK_API_KEY`。
 
-## 本地 SSE 测试
-
-```bash
-python3 ../example/mock_sse_server.py 8082
-./build/http_proxy_test 8081 8082
-curl -N -H "Authorization: Bearer $GATEWAY_API_KEY" \
-  http://127.0.0.1:8081/sse
-```
-
-应该逐块看到 `data: 0` 到 `data: 4`。
-
 ## 使用方式
 
 鉴权在 `HttpServer` 的 async handler 里完成，然后才创建 `ProxySession`：
@@ -190,22 +178,7 @@ server.SetAsyncHandler(
 - 下游断开时，`HttpServerSession` 调取消回调 → `ProxySession::Cancel`
   → `HttpClientUpstream::Cancel` → `TcpClient::Abort`，立即停止上游
 
-## 测试
-
-纯单测，不需要 socket：
-
-```bash
-make unit-test
-```
-
-网关鉴权单测：
-
-```bash
-cd ../gateway
-make unit-test
-```
-
-proxy 和上游的回环测试：
+## 手动验证
 
 ```bash
 make

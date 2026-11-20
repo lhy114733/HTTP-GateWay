@@ -23,7 +23,8 @@ stunnel -> provider
 
 - `auth.hpp`：`Authenticator`、`Tenant`、`AuthResult`，解析 `Authorization: Bearer ...` 并做常量时间比较
 - `config.hpp`：从环境变量加载最小配置
-- `auth_test.cc`：鉴权和配置的纯单测
+
+这两个文件都是 header-only，由 `proxy/` 编译时直接包含。
 
 ## 配置
 
@@ -72,22 +73,24 @@ Authorization: Bearer gw-local-dev
 
 所以 provider 永远看不到网关 key，客户端也永远看不到 provider key。
 
-## 测试
+## 手动验证
 
-```bash
-cd gateway
-make unit-test
-make asan
-```
-
-集成测试需要一个本地上游：
+启动本地上游：
 
 ```bash
 ./app/build/http_server_test 8080
+```
 
+启动网关：
+
+```bash
 GATEWAY_API_KEY=gw-test DEEPSEEK_API_KEY=sk-provider-test \
   ./proxy/build/http_proxy_test 8081 8080 127.0.0.1
+```
 
+验证 key 注入：
+
+```bash
 curl -H 'Authorization: Bearer gw-test' http://127.0.0.1:8081/auth
 # Bearer sk-provider-test
 

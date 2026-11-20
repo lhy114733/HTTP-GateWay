@@ -11,10 +11,6 @@ http/
 ├── http_response_writer.hpp  # 下游响应序列化
 ├── http_request_writer.hpp   # 上游请求序列化
 ├── http_response_parser.hpp  # 上游响应解析
-├── http_codec_test.cc        # 请求解析测试
-├── http_response_writer_test.cc
-├── http_request_writer_test.cc
-├── http_response_parser_test.cc
 ├── example.cc                # pico 原始示例
 ├── Makefile
 └── README.md
@@ -85,17 +81,6 @@ case http::ParseStatus::Error:
 - `Complete`：本调用消费了整条消息剩余部分
 - `Error`：为 0，连接应关闭
 
-测试：
-
-```bash
-cd http
-make test
-make asan
-```
-
-测试覆盖：完整 GET/POST、逐字节喂入、header/body 分包、两条请求拼接、畸形请求、
-重复/冲突/非法 `Content-Length`、大小限制、HTTP/1.0 与 1.1 keep-alive。
-
 ## 响应 writer
 
 `http_response_writer.hpp` 只负责把状态行、header、body 变成字节，通过 `ByteSink` 输出，
@@ -121,15 +106,6 @@ writer.Finish();
 用户 header 里的 `Content-Length`、`Transfer-Encoding`、`Connection` 会被忽略，
 以 `BodyMode` 和构造函数的 `keep_alive` 为准。`Finish()` 是幂等的。
 
-测试：
-
-```bash
-cd http
-make response-writer-test
-```
-
-（`make writer-test` 是旧的别名，仍然可用。）
-
 ## 上游请求 writer
 
 `http_request_writer.hpp` 把 `HttpRequest` 序列化成上游请求字节：
@@ -145,13 +121,6 @@ client.Send(wire.data(), wire.size());
   `Connection` 和其他 hop-by-hop header 会被忽略
 - 当前固定 `Accept-Encoding: identity`，避免上游 gzip 后无法解析
 - 默认 `Connection: close`，一个请求一条连接
-
-测试：
-
-```bash
-cd http
-make request-writer-test
-```
 
 ## 上游响应 parser
 
@@ -175,13 +144,6 @@ auto status = parser.Parse(view, consumed);
 // Complete: parser.Response() 有效
 // Error: parser.error()
 // 连接关闭时：parser.OnEof()
-```
-
-测试：
-
-```bash
-cd http
-make response-parser-test
 ```
 
 ## API
