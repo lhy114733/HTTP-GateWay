@@ -3,11 +3,11 @@
 // /auth 会把收到的 Authorization 原样返回，用于验证网关是否把
 // 客户端的网关 key 替换成了 provider key。
 //
-// 编译（在 app/ 目录下）：
+// 编译（在 adapter/ 目录下）：
 //   make
 //   ./build/http_server_test 8080
 
-#include "../app/http_server.hpp"
+#include "../adapter/http_server.hpp"
 
 #include <cstdio>
 #include <cstdlib>

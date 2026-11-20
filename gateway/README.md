@@ -78,7 +78,7 @@ Authorization: Bearer gw-local-dev
 启动本地上游：
 
 ```bash
-./app/build/http_server_test 8080
+./adapter/build/http_server_test 8080
 ```
 
 启动网关：

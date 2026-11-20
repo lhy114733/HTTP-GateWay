@@ -1,4 +1,4 @@
-# app/ —— HTTP 与 TCP 的适配层
+# adapter/ —— HTTP 与 TCP 的适配层
 
 `core/http/` 下的 codec 不认识 socket；`core/net/` 下的 TCP 层不认识 HTTP。
 这一层同时看到两者，负责接线：
@@ -6,7 +6,7 @@
 ```
 TcpServer（core/net/）
     ↓ 连接事件 + Buffer
-HttpServerSession（app/）
+HttpServerSession（adapter/）
     ↓ 字节 / HttpRequest
 http::HttpRequestParser / http::HttpResponseWriter（core/http/）
 ```
@@ -27,7 +27,7 @@ http::HttpRequestParser / http::HttpResponseWriter（core/http/）
 ## 编译和运行
 
 ```bash
-cd app
+cd adapter
 make
 ./build/http_server_test 8080      # 单 loop
 ./build/http_server_test 8080 2    # 2 个从属 loop

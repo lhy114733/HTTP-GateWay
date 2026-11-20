@@ -18,11 +18,11 @@
 //   ./build/http_proxy_test 8081 443 api.deepseek.com 127.0.0.1 18443
 //   参数依次是：代理端口、上游 Host 端口、上游域名、连接 IP、连接端口。
 
-#include "../app/eventloop_task_runner.hpp"
-#include "../app/host_resolver.hpp"
-#include "../app/http_client_upstream.hpp"
-#include "../app/http_response_sink.hpp"
-#include "../app/http_server.hpp"
+#include "../adapter/eventloop_task_runner.hpp"
+#include "../adapter/host_resolver.hpp"
+#include "../adapter/http_client_upstream.hpp"
+#include "../adapter/http_response_sink.hpp"
+#include "../adapter/http_server.hpp"
 #include "../gateway/auth.hpp"
 #include "../gateway/config.hpp"
 #include "../proxy/proxy_manager.hpp"

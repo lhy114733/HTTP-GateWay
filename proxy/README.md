@@ -22,7 +22,7 @@
 - `../example/stunnel-deepseek.conf`：TLS sidecar 配置示例
 - `../gateway/`：网关 key 校验和 provider key 注入
 
-适配器在 `app/`：
+适配器在 `adapter/`：
 
 - `http_client_upstream.hpp`：`HttpClientSession` → `UpstreamClient`
 - `http_response_sink.hpp`：`HttpResponseWriter` → `DownstreamSink`
@@ -47,7 +47,7 @@ export DEEPSEEK_API_KEY='sk-local-dummy'
 先启动一个上游：
 
 ```bash
-cd app
+cd adapter
 make
 ./build/http_server_test 8080
 ```
