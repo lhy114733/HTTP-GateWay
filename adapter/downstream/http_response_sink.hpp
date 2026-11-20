@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../core/http/http_response_writer.hpp"
-#include "../proxy/ports.hpp"
+#include "../../core/http/http_response_writer.hpp"
+#include "../../proxy/ports.hpp"
 
 #include <memory>
 #include <string_view>

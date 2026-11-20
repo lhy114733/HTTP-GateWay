@@ -6,20 +6,48 @@
 ```
 TcpServer（core/net/）
     ↓ 连接事件 + Buffer
-HttpServerSession（adapter/）
+HttpServerSession（adapter/downstream/）
     ↓ 字节 / HttpRequest
 http::HttpRequestParser / http::HttpResponseWriter（core/http/）
 ```
 
+## 目录
+
+```text
+adapter/
+├── downstream/          # 客户端 -> 网关方向
+│   ├── http_server.hpp
+│   ├── http_server_session.hpp
+│   └── http_response_sink.hpp
+├── upstream/            # 网关 -> provider 方向
+│   ├── http_client_session.hpp
+│   └── http_client_upstream.hpp
+├── runtime/             # Eventloop / DNS 等运行时适配
+│   ├── eventloop_task_runner.hpp
+│   └── host_resolver.hpp
+└── README.md
+```
+
 ## 文件
+
+### downstream
 
 - `http_server_session.hpp`：一条 TCP 连接对应一个 Session，负责解析请求、调用 handler、写响应。
 - `http_server.hpp`：持有 `TcpServer`，按连接 id 管理 Session。
-- `host_resolver.hpp`：启动阶段用 `getaddrinfo` 解析一次域名，得到 IPv4 列表。
+- `http_response_sink.hpp`：把 `HttpResponseWriter` 适配成 `proxy::DownstreamSink`。
+
+### upstream
+
 - `http_client_session.hpp`：`TcpClient` + 请求序列化 + 响应解析，一个请求一条连接。
 - `http_client_upstream.hpp`：把 `HttpClientSession` 适配成 `proxy::UpstreamClient`。
-- `http_response_sink.hpp`：把 `HttpResponseWriter` 适配成 `proxy::DownstreamSink`。
+
+### runtime
+
+- `host_resolver.hpp`：启动阶段用 `getaddrinfo` 解析一次域名，得到 IPv4 列表。
 - `eventloop_task_runner.hpp`：把 `Eventloop::QueueInLoop` 适配成 `proxy::TaskRunner`。
+
+### 其他
+
 - `../example/http_server_test.cc`：最小服务端示例，提供 `/healthz`、`/echo` 和 `/auth`。
 - `../example/stunnel-deepseek.conf`：TLS sidecar 配置示例。
 - `../gateway/README.md`：网关鉴权和上游 key 注入。

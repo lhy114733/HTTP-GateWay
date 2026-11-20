@@ -24,9 +24,9 @@
 
 适配器在 `adapter/`：
 
-- `http_client_upstream.hpp`：`HttpClientSession` → `UpstreamClient`
-- `http_response_sink.hpp`：`HttpResponseWriter` → `DownstreamSink`
-- `eventloop_task_runner.hpp`：`Eventloop::QueueInLoop` → `TaskRunner`
+- `upstream/http_client_upstream.hpp`：`HttpClientSession` → `UpstreamClient`
+- `downstream/http_response_sink.hpp`：`HttpResponseWriter` → `DownstreamSink`
+- `runtime/eventloop_task_runner.hpp`：`Eventloop::QueueInLoop` → `TaskRunner`
 
 ## 编译和运行
 
