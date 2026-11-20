@@ -1,9 +1,9 @@
-# http/ —— 简化版 HTTP 解析
+# core/http/ —— 简化版 HTTP 解析
 
 这里用的是 **picohttpparser v1.5**，pico 本身只有两个文件：
 
 ```
-http/
+core/http/
 ├── picohttpparser.c
 ├── picohttpparser.h
 ├── http_message.hpp          # HeaderMap / HttpRequest / HttpResponse / 错误码
@@ -31,9 +31,9 @@ http/
 ## 编译
 
 ```bash
-gcc -O2 -c http/picohttpparser.c -o http/picohttpparser.o
-g++ -std=c++17 -O2 -I http http/example.cc http/picohttpparser.o -o http/example
-./http/example
+gcc -O2 -c core/http/picohttpparser.c -o core/http/picohttpparser.o
+g++ -std=c++17 -O2 -I core/http core/http/example.cc core/http/picohttpparser.o -o core/http/example
+./core/http/example
 ```
 
 输出应该是：

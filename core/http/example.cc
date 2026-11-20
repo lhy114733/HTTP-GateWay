@@ -3,9 +3,9 @@
 //   2. 响应解析（chunked body），用 phr_decode_chunked 去 chunk
 //
 // 编译（在项目根目录）：
-//   gcc -O2 -c http/picohttpparser.c -o http/picohttpparser.o
-//   g++ -std=c++17 -O2 -I http http/example.cc http/picohttpparser.o -o http/example
-//   ./http/example
+//   gcc -O2 -c core/http/picohttpparser.c -o core/http/picohttpparser.o
+//   g++ -std=c++17 -O2 -I core/http core/http/example.cc core/http/picohttpparser.o -o core/http/example
+//   ./core/http/example
 
 #include "picohttpparser.h"
 

@@ -1,14 +1,14 @@
 # app/ —— HTTP 与 TCP 的适配层
 
-`http/` 下的 codec 不认识 socket；`source/` 下的 TCP 层不认识 HTTP。
+`core/http/` 下的 codec 不认识 socket；`core/net/` 下的 TCP 层不认识 HTTP。
 这一层同时看到两者，负责接线：
 
 ```
-TcpServer（source/）
+TcpServer（core/net/）
     ↓ 连接事件 + Buffer
 HttpServerSession（app/）
     ↓ 字节 / HttpRequest
-http::HttpRequestParser / http::HttpResponseWriter（http/）
+http::HttpRequestParser / http::HttpResponseWriter（core/http/）
 ```
 
 ## 文件

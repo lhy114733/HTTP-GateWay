@@ -11,11 +11,12 @@ all: $(SERVER_TEST)
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(PICO_OBJ): ../http/picohttpparser.c | $(BUILD)
+$(PICO_OBJ): ../core/http/picohttpparser.c | $(BUILD)
 	$(CC) -std=c99 -O2 -Wall -Wextra -Wno-unused-parameter -c $< -o $@
 
 $(SERVER_TEST): ../example/http_server_test.cc http_server.hpp http_server_session.hpp \
-		../http/http_message.hpp ../http/http_request_parser.hpp ../http/http_response_writer.hpp $(PICO_OBJ) | $(BUILD)
+		../core/http/http_message.hpp ../core/http/http_request_parser.hpp ../core/http/http_response_writer.hpp \
+		../core/net/TcpServer.hpp ../core/net/connection.hpp $(PICO_OBJ) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $< $(PICO_OBJ) -o $@
 
 run: $(SERVER_TEST)

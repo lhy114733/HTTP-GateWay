@@ -1,9 +1,9 @@
 #pragma once
 
-#include "../http/http_request_parser.hpp"
-#include "../http/http_response_writer.hpp"
-#include "../source/buffer.hpp"
-#include "../source/connection.hpp"
+#include "../core/http/http_request_parser.hpp"
+#include "../core/http/http_response_writer.hpp"
+#include "../core/net/buffer.hpp"
+#include "../core/net/connection.hpp"
 
 #include <functional>
 #include <memory>
@@ -14,7 +14,7 @@
 // HTTP 服务端的适配层：一条 TCP 连接对应一个 Session。
 //
 // 这里才同时看到 Connection / Buffer 和 HttpRequest / HttpResponseWriter；
-// http/ 下的 codec 仍然不知道 socket 的存在。
+// core/http 下的 codec 仍然不知道 socket 的存在。
 class HttpServerSession : public std::enable_shared_from_this<HttpServerSession>
 {
 public:

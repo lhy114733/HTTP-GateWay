@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../http/http_request_writer.hpp"
-#include "../http/http_response_parser.hpp"
-#include "../source/TcpClient.hpp"
+#include "../core/http/http_request_writer.hpp"
+#include "../core/http/http_response_parser.hpp"
+#include "../core/net/TcpClient.hpp"
 
 #include <cstring>
 #include <functional>

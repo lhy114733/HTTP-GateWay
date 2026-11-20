@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../http/http_message.hpp"
+#include "../core/http/http_message.hpp"
 
 #include <cstddef>
 #include <functional>

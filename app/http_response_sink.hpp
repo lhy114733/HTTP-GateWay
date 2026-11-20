@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../http/http_response_writer.hpp"
+#include "../core/http/http_response_writer.hpp"
 #include "../proxy/ports.hpp"
 
 #include <memory>
