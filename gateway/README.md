@@ -11,7 +11,7 @@ gateway::Authenticator
         ↓
 删除客户端 Authorization
         ↓
-HttpClientUpstream::SetUpstreamAuth
+HttpUpstreamClient::SetUpstreamAuth
   注入 Authorization: Bearer sk-provider-xxx
         ↓
 stunnel -> provider

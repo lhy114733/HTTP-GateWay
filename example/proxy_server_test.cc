@@ -20,8 +20,8 @@
 
 #include "../adapter/runtime/eventloop_task_runner.hpp"
 #include "../adapter/runtime/host_resolver.hpp"
-#include "../adapter/upstream/http_client_upstream.hpp"
-#include "../adapter/downstream/http_response_sink.hpp"
+#include "../adapter/upstream/http_upstream_client.hpp"
+#include "../adapter/downstream/http_downstream_sink.hpp"
 #include "../adapter/downstream/http_server.hpp"
 #include "../gateway/auth.hpp"
 #include "../gateway/config.hpp"
@@ -124,8 +124,8 @@ int main(int argc, char *argv[])
             upstream_request.headers.Remove("proxy-authorization");
 
             auto tasks = std::make_shared<EventloopTaskRunner>(conn->GetLoop());
-            auto sink = std::make_shared<HttpResponseSink>(std::move(writer));
-            auto upstream = std::make_unique<HttpClientUpstream>(
+            auto sink = std::make_shared<HttpDownstreamSink>(std::move(writer));
+            auto upstream = std::make_unique<HttpUpstreamClient>(
                 conn->GetLoop(), upstream_host, upstream_port,
                 connect_ip, connect_port);
             upstream->SetUpstreamAuth(

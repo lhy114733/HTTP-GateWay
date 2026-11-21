@@ -9,13 +9,13 @@
 #include <utility>
 
 // proxy::UpstreamClient 的 HTTP 实现。
-class HttpClientUpstream : public proxy::UpstreamClient
+class HttpUpstreamClient : public proxy::UpstreamClient
 {
 public:
     // host/host_port 用于 HTTP Host 头；connect_ip/connect_port 用于 TCP 连接。
     // stunnel 模式：host=api.deepseek.com, host_port=443,
     //               connect_ip=127.0.0.1, connect_port=18443。
-    HttpClientUpstream(Eventloop *loop, std::string host, uint16_t host_port,
+    HttpUpstreamClient(Eventloop *loop, std::string host, uint16_t host_port,
                        std::string connect_ip, uint16_t connect_port)
         : _client(loop, std::move(host), host_port,
                   std::move(connect_ip), connect_port)
@@ -23,13 +23,13 @@ public:
     }
 
     // 直连：连接地址和 Host 用同一组 host/port。
-    HttpClientUpstream(Eventloop *loop, std::string host, uint16_t port)
+    HttpUpstreamClient(Eventloop *loop, std::string host, uint16_t port)
         : _client(loop, std::move(host), port)
     {
     }
 
     // 直连但连接地址单独指定（host 是域名，connect_ip 是解析好的 IP）。
-    HttpClientUpstream(Eventloop *loop, std::string host, uint16_t port,
+    HttpUpstreamClient(Eventloop *loop, std::string host, uint16_t port,
                        std::string connect_ip)
         : _client(loop, std::move(host), port, std::move(connect_ip))
     {

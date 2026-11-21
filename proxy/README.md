@@ -24,8 +24,8 @@
 
 适配器在 `adapter/`：
 
-- `upstream/http_client_upstream.hpp`：`HttpClientSession` → `UpstreamClient`
-- `downstream/http_response_sink.hpp`：`HttpResponseWriter` → `DownstreamSink`
+- `upstream/http_upstream_client.hpp`：`HttpClientSession` → `UpstreamClient`
+- `downstream/http_downstream_sink.hpp`：`HttpResponseWriter` → `DownstreamSink`
 - `runtime/eventloop_task_runner.hpp`：`Eventloop::QueueInLoop` → `TaskRunner`
 
 ## 编译和运行
@@ -141,8 +141,8 @@ server.SetAsyncHandler(
         upstream_request.headers.Remove("authorization");
 
         auto tasks = std::make_shared<EventloopTaskRunner>(conn->GetLoop());
-        auto sink = std::make_shared<HttpResponseSink>(std::move(writer));
-        auto upstream = std::make_unique<HttpClientUpstream>(
+        auto sink = std::make_shared<HttpDownstreamSink>(std::move(writer));
+        auto upstream = std::make_unique<HttpUpstreamClient>(
             conn->GetLoop(),
             "api.deepseek.com", 443,   // Host 头
             "127.0.0.1", 18443);       // 实际 TCP 连接
@@ -176,7 +176,7 @@ server.SetAsyncHandler(
 - 响应结束调用 `HttpResponseWriter::Finish()`，并通知 `HttpServerSession`
 - `ProxyManager` 持有活跃 session，handler 返回后不会提前析构
 - 下游断开时，`HttpServerSession` 调取消回调 → `ProxySession::Cancel`
-  → `HttpClientUpstream::Cancel` → `TcpClient::Abort`，立即停止上游
+  → `HttpUpstreamClient::Cancel` → `TcpClient::Abort`，立即停止上游
 
 ## 手动验证
 

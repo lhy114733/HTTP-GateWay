@@ -16,8 +16,8 @@ $(PICO_OBJ): ../core/http/picohttpparser.c | $(BUILD)
 
 $(PROXY_TEST): ../example/proxy_server_test.cc proxy_session.hpp proxy_manager.hpp ports.hpp \
 		../adapter/runtime/eventloop_task_runner.hpp ../adapter/runtime/host_resolver.hpp \
-		../adapter/upstream/http_client_upstream.hpp \
-		../adapter/downstream/http_response_sink.hpp \
+		../adapter/upstream/http_upstream_client.hpp \
+		../adapter/downstream/http_downstream_sink.hpp \
 		../adapter/downstream/http_server.hpp ../adapter/downstream/http_server_session.hpp \
 		../adapter/upstream/http_client_session.hpp \
 		../gateway/auth.hpp ../gateway/config.hpp \

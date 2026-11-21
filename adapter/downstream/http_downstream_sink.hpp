@@ -7,10 +7,10 @@
 #include <string_view>
 
 // proxy::DownstreamSink 的 HTTP 实现。
-class HttpResponseSink : public proxy::DownstreamSink
+class HttpDownstreamSink : public proxy::DownstreamSink
 {
 public:
-    explicit HttpResponseSink(std::shared_ptr<http::HttpResponseWriter> writer)
+    explicit HttpDownstreamSink(std::shared_ptr<http::HttpResponseWriter> writer)
         : _writer(std::move(writer))
     {
     }

@@ -18,10 +18,10 @@ adapter/
 ├── downstream/          # 客户端 -> 网关方向
 │   ├── http_server.hpp
 │   ├── http_server_session.hpp
-│   └── http_response_sink.hpp
+│   └── http_downstream_sink.hpp
 ├── upstream/            # 网关 -> provider 方向
 │   ├── http_client_session.hpp
-│   └── http_client_upstream.hpp
+│   └── http_upstream_client.hpp
 ├── runtime/             # Eventloop / DNS 等运行时适配
 │   ├── eventloop_task_runner.hpp
 │   └── host_resolver.hpp
@@ -34,12 +34,12 @@ adapter/
 
 - `http_server_session.hpp`：一条 TCP 连接对应一个 Session，负责解析请求、调用 handler、写响应。
 - `http_server.hpp`：持有 `TcpServer`，按连接 id 管理 Session。
-- `http_response_sink.hpp`：把 `HttpResponseWriter` 适配成 `proxy::DownstreamSink`。
+- `http_downstream_sink.hpp`：把 `HttpResponseWriter` 适配成 `proxy::DownstreamSink`。
 
 ### upstream
 
 - `http_client_session.hpp`：`TcpClient` + 请求序列化 + 响应解析，一个请求一条连接。
-- `http_client_upstream.hpp`：把 `HttpClientSession` 适配成 `proxy::UpstreamClient`。
+- `http_upstream_client.hpp`：把 `HttpClientSession` 适配成 `proxy::UpstreamClient`。
 
 ### runtime
 
