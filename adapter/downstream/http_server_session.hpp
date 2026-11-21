@@ -124,9 +124,12 @@ public:
                 },
                 keep_alive);
 
+            // 走到这里说明已经通过_parser收到一个完整的httprequest报文，
             if (_handler)
             {
-                _handler(_parser.Request(), writer);
+                _handler(_parser.Request(), writer); 
+                // 第一个参数是接收到的http请求报文，对这个报文做处理， 
+                // 第二个参数决定向哪个_conn里写，因为WriteHeader()和WriteBody()就是Send()
             }
 
             // handler 忘了写响应时兜底一个 500，避免连接空等。

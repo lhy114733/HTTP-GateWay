@@ -40,6 +40,13 @@ public:
         kChunked // SSE / 长度未知
     };
 
+    // HttpResponseWriter构造时已经捕获了一个conn(指针)，
+    // _sink(char*,size_t) -> Emit(char*,size_t)，
+    // 每次调用Emit()都相当于向这个conn连接Send()一次！！！
+    // 通过WriterHeader()和WriterBody调Emit(),
+    // 所以必须先WriterHeader()再WriterBody()，不然Send()顺序就反了
+    // 这种回调写法算一种思路吧，其实挺好的，但是不是很容易理解，
+    // json_cpp的直接返回一个string更好理解还是。
     HttpResponseWriter(ByteSink sink, bool keep_alive)
         : _sink(std::move(sink)), _keep_alive(keep_alive)
     {

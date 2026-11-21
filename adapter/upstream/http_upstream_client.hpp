@@ -35,6 +35,7 @@ public:
     {
     }
 
+    // 配置客户端HttpClientSession _client的各种回调，并且发送一次请求request
     bool Start(const http::HttpRequest &request,
                proxy::UpstreamCallbacks callbacks) override
     {
@@ -56,7 +57,8 @@ public:
             if (_callbacks.on_closed) _callbacks.on_closed();
         });
 
-        return _client.Send(request);
+        // 发送一次请求，发送请求必须在设置回调之后
+        return _client.Send(request); 
     }
 
     // 由网关控制面配置 provider 的认证头。

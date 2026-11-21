@@ -40,7 +40,8 @@ public:
     {
         _done_callback = std::move(callback);
     }
-
+    // 客户端的性质决定了要有headers,body,complete,error,closed这些回调(这里是这么设计的)
+    // 主要用户设置回调，回调由ProSession模块 -> UpStreamClient模块 -> HttpClientSession模块
     bool Start()
     {
         if (_started) return false;

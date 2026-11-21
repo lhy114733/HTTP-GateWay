@@ -45,7 +45,8 @@ private:
     void HandleConnected(const std::shared_ptr<Connection> &conn)
     {
         auto session = std::make_shared<HttpServerSession>(conn, _handler, _async_handler);
-
+        // _handler就是业务层函数，通过http上层设置给httpserver，server再设置给serversession
+        // 这里只是初始化handle，让session知道调什么，下面handlemessage才是在读事件就绪后调Ondata()->handle()，实现http层的协议处理
         std::lock_guard<std::mutex> lock(_sessions_mutex);
         _sessions[conn->Id()] = std::move(session);
     }
@@ -60,7 +61,7 @@ private:
             session = it->second;
         }
 
-        session->OnData(in);
+        session->OnData(in); //
     }
 
     void HandleClosed(const std::shared_ptr<Connection> &conn)
