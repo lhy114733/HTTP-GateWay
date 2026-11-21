@@ -251,7 +251,7 @@ private:
         _state = State::kDone;
 
         // 先关闭连接，保证 Connection::Release 的 queued task 排在
-        // 上层“销毁 ProxySession/HttpUpstreamClient”之前；否则 closed 回调
+        // 上层“销毁 ProxySession”之前；否则 closed 回调
         // 会打到已释放的 HttpClientSession 上。
         if (!from_eof) _client.Disconnect();
 

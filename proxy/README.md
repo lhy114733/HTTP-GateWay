@@ -15,18 +15,19 @@
 
 ## 文件
 
-- `ports.hpp`：`UpstreamClient` / `DownstreamSink` / `TaskRunner` 三个端口
-- `proxy_session.hpp`：一次代理请求的状态机，只依赖 `ports.hpp` + `http_message.hpp`
+- `proxy_session.hpp`：一次代理请求的状态机，直接使用 `HttpClientSession` + `HttpResponseWriter`
 - `proxy_manager.hpp`：持有活跃 ProxySession，管理生命周期
 - `../example/proxy_server_test.cc`：最小代理服务端示例
 - `../example/stunnel-deepseek.conf`：TLS sidecar 配置示例
 - `../gateway/`：网关 key 校验和 provider key 注入
 
-适配器在 `adapter/`：
+`proxy/` 现在是一个 HTTP 专用数据面，不再维护通用的
+`UpstreamClient` / `DownstreamSink` 端口和 adapter 包装。
 
-- `upstream/http_upstream_client.hpp`：`HttpClientSession` → `UpstreamClient`
-- `downstream/http_downstream_sink.hpp`：`HttpResponseWriter` → `DownstreamSink`
-- `runtime/eventloop_task_runner.hpp`：`Eventloop::QueueInLoop` → `TaskRunner`
+`ProxySession` 直接使用：
+
+- `adapter/upstream/http_client_session.hpp`
+- `core/http/http_response_writer.hpp`
 
 ## 编译和运行
 
@@ -140,9 +141,7 @@ server.SetAsyncHandler(
         http::HttpRequest upstream_request = request;
         upstream_request.headers.Remove("authorization");
 
-        auto tasks = std::make_shared<EventloopTaskRunner>(conn->GetLoop());
-        auto sink = std::make_shared<HttpDownstreamSink>(std::move(writer));
-        auto upstream = std::make_unique<HttpUpstreamClient>(
+        auto upstream = std::make_unique<HttpClientSession>(
             conn->GetLoop(),
             "api.deepseek.com", 443,   // Host 头
             "127.0.0.1", 18443);       // 实际 TCP 连接
@@ -150,18 +149,23 @@ server.SetAsyncHandler(
         upstream->SetUpstreamAuth(
             "Authorization", "Bearer " + gateway_config.provider_key);
 
-        auto session = manager.Start(std::move(upstream), sink,
-                                     std::move(upstream_request), tasks);
+        auto post = [loop = conn->GetLoop()](std::function<void()> task) {
+            loop->QueueInLoop(std::move(task));
+        };
 
-        return [session, tasks]() { session->Cancel(); };
+        auto session = manager.Start(
+            std::move(upstream), std::move(writer),
+            std::move(upstream_request), post);
+
+        return [session]() { session->Cancel(); };
     });
 ```
 
 `HttpClientSession` 发送前还会再删一次 `Authorization` / `Proxy-Authorization`，
 然后写入 provider 认证头，作为第二道防线。
 
-`HttpServer` 的异步 handler 只负责鉴权、组装端口和创建 `ProxySession`；
-`ProxyManager` 持有活跃 session，`ProxySession` 只依赖端口，不认识 TCP 和 key。
+`HttpServer` 的异步 handler 只负责鉴权、创建上游客户端和创建 `ProxySession`；
+`ProxyManager` 持有活跃 session，`ProxySession` 直接使用 HTTP client/writer。
 
 ## 当前行为
 
@@ -176,7 +180,7 @@ server.SetAsyncHandler(
 - 响应结束调用 `HttpResponseWriter::Finish()`，并通知 `HttpServerSession`
 - `ProxyManager` 持有活跃 session，handler 返回后不会提前析构
 - 下游断开时，`HttpServerSession` 调取消回调 → `ProxySession::Cancel`
-  → `HttpUpstreamClient::Cancel` → `TcpClient::Abort`，立即停止上游
+  → `HttpClientSession::Cancel` → `TcpClient::Abort`，立即停止上游
 
 ## 手动验证
 

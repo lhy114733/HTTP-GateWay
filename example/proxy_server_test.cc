@@ -18,10 +18,8 @@
 //   ./build/http_proxy_test 8081 443 api.deepseek.com 127.0.0.1 18443
 //   参数依次是：代理端口、上游 Host 端口、上游域名、连接 IP、连接端口。
 
-#include "../adapter/runtime/eventloop_task_runner.hpp"
 #include "../adapter/runtime/host_resolver.hpp"
-#include "../adapter/upstream/http_upstream_client.hpp"
-#include "../adapter/downstream/http_downstream_sink.hpp"
+#include "../adapter/upstream/http_client_session.hpp"
 #include "../adapter/downstream/http_server.hpp"
 #include "../gateway/auth.hpp"
 #include "../gateway/config.hpp"
@@ -123,18 +121,20 @@ int main(int argc, char *argv[])
             upstream_request.headers.Remove("authorization");
             upstream_request.headers.Remove("proxy-authorization");
 
-            auto tasks = std::make_shared<EventloopTaskRunner>(conn->GetLoop());
-            auto sink = std::make_shared<HttpDownstreamSink>(std::move(writer));
-            auto upstream = std::make_unique<HttpUpstreamClient>(
+            auto upstream = std::make_unique<HttpClientSession>(
                 conn->GetLoop(), upstream_host, upstream_port,
                 connect_ip, connect_port);
             upstream->SetUpstreamAuth(
                 "Authorization", "Bearer " + gateway_config.provider_key);
 
-            auto session = manager.Start(std::move(upstream), sink,
-                                         std::move(upstream_request), tasks);
+            auto post = [loop = conn->GetLoop()](std::function<void()> task) {
+                loop->QueueInLoop(std::move(task));
+            };
 
-            return [session, tasks]() {
+            auto session = manager.Start(std::move(upstream), std::move(writer),
+                                         std::move(upstream_request), post);
+
+            return [session]() {
                 session->Cancel();
             };
         });

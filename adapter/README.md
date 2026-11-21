@@ -17,13 +17,10 @@ http::HttpRequestParser / http::HttpResponseWriter（core/http/）
 adapter/
 ├── downstream/          # 客户端 -> 网关方向
 │   ├── http_server.hpp
-│   ├── http_server_session.hpp
-│   └── http_downstream_sink.hpp
+│   └── http_server_session.hpp
 ├── upstream/            # 网关 -> provider 方向
-│   ├── http_client_session.hpp
-│   └── http_upstream_client.hpp
+│   └── http_client_session.hpp
 ├── runtime/             # Eventloop / DNS 等运行时适配
-│   ├── eventloop_task_runner.hpp
 │   └── host_resolver.hpp
 └── README.md
 ```
@@ -34,17 +31,15 @@ adapter/
 
 - `http_server_session.hpp`：一条 TCP 连接对应一个 Session，负责解析请求、调用 handler、写响应。
 - `http_server.hpp`：持有 `TcpServer`，按连接 id 管理 Session。
-- `http_downstream_sink.hpp`：把 `HttpResponseWriter` 适配成 `proxy::DownstreamSink`。
 
 ### upstream
 
 - `http_client_session.hpp`：`TcpClient` + 请求序列化 + 响应解析，一个请求一条连接。
-- `http_upstream_client.hpp`：把 `HttpClientSession` 适配成 `proxy::UpstreamClient`。
+  它现在被 `ProxySession` 直接使用，不再经过 `HttpUpstreamClient` 包装。
 
 ### runtime
 
 - `host_resolver.hpp`：启动阶段用 `getaddrinfo` 解析一次域名，得到 IPv4 列表。
-- `eventloop_task_runner.hpp`：把 `Eventloop::QueueInLoop` 适配成 `proxy::TaskRunner`。
 
 ### 其他
 

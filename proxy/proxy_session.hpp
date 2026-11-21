@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ports.hpp"
-
+#include "../adapter/upstream/http_client_session.hpp"
 #include "../core/http/http_message.hpp"
+#include "../core/http/http_response_writer.hpp"
 
 #include <charconv>
 #include <cstddef>
@@ -18,17 +18,18 @@
 namespace proxy
 {
 
-// 一次代理请求的事务对象。
+// 一次 HTTP 代理请求的事务对象。
 //
-// 只依赖 proxy::UpstreamClient / proxy::DownstreamSink 和 http 数据模型；
-// 不依赖 TcpClient、Eventloop、HttpResponseWriter。
+// 这里直接依赖 HttpClientSession 和 HttpResponseWriter。
+// 不再有 UpstreamClient / DownstreamSink 端口和对应的 adapter 包装。
 class ProxySession : public std::enable_shared_from_this<ProxySession>
 {
 public:
     using DoneCallback = std::function<void()>;
+    using WriterMode = http::HttpResponseWriter::BodyMode;
 
-    ProxySession(std::unique_ptr<UpstreamClient> upstream,
-                 std::shared_ptr<DownstreamSink> downstream,
+    ProxySession(std::unique_ptr<HttpClientSession> upstream,
+                 std::shared_ptr<http::HttpResponseWriter> downstream,
                  http::HttpRequest request)
         : _request(std::move(request)),
           _upstream(std::move(upstream)),
@@ -40,8 +41,8 @@ public:
     {
         _done_callback = std::move(callback);
     }
-    // 客户端的性质决定了要有headers,body,complete,error,closed这些回调(这里是这么设计的)
-    // 主要用户设置回调，回调由ProSession模块 -> UpStreamClient模块 -> HttpClientSession模块
+
+    // 把上游客户端的五类事件直接接到当前事务上。
     bool Start()
     {
         if (_started) return false;
@@ -55,24 +56,23 @@ public:
 
         std::weak_ptr<ProxySession> weak = shared_from_this();
 
-        UpstreamCallbacks callbacks;
-        callbacks.on_headers = [weak](const http::HttpResponse &response) {
+        _upstream->SetHeadersCallback([weak](const http::HttpResponse &response) {
             if (auto self = weak.lock()) self->OnUpstreamHeaders(response);
-        };
-        callbacks.on_body = [weak](const char *data, size_t len) {
+        });
+        _upstream->SetBodyCallback([weak](const char *data, size_t len) {
             if (auto self = weak.lock()) self->OnUpstreamBody(data, len);
-        };
-        callbacks.on_complete = [weak](const http::HttpResponse &response) {
+        });
+        _upstream->SetResponseCallback([weak](const http::HttpResponse &response) {
             if (auto self = weak.lock()) self->OnUpstreamComplete(response);
-        };
-        callbacks.on_error = [weak](std::string message) {
-            if (auto self = weak.lock()) self->OnUpstreamError(std::move(message));
-        };
-        callbacks.on_closed = [weak]() {
+        });
+        _upstream->SetErrorCallback([weak](const std::string &message) {
+            if (auto self = weak.lock()) self->OnUpstreamError(message);
+        });
+        _upstream->SetClosedCallback([weak]() {
             if (auto self = weak.lock()) self->OnUpstreamClosed();
-        };
+        });
 
-        if (!_upstream->Start(_request, std::move(callbacks)))
+        if (!_upstream->Send(_request))
         {
             OnUpstreamError("failed to start upstream request");
             return false;
@@ -103,11 +103,11 @@ private:
 
         if (IsNoBodyStatus(response.status) || _request.method == "HEAD")
         {
-            _mode = BodyMode::kNone;
+            _mode = WriterMode::kNone;
         }
         else if (response.headers.HasToken("transfer-encoding", "chunked"))
         {
-            _mode = BodyMode::kChunked;
+            _mode = WriterMode::kChunked;
         }
         else
         {
@@ -121,12 +121,12 @@ private:
                     return;
                 }
                 _content_length = value;
-                _mode = BodyMode::kFixed;
+                _mode = WriterMode::kFixed;
             }
             else
             {
                 // 上游没有长度，读到关闭；下游用 chunked 边收边发。
-                _mode = BodyMode::kChunked;
+                _mode = WriterMode::kChunked;
             }
         }
 
@@ -146,11 +146,11 @@ private:
     {
         if (_done || !_headers_sent || !_downstream) return;
 
-        if (_mode == BodyMode::kChunked)
+        if (_mode == WriterMode::kChunked)
         {
             _downstream->WriteChunk(data, len);
         }
-        else if (_mode == BodyMode::kFixed)
+        else if (_mode == WriterMode::kFixed)
         {
             _downstream->WriteBody(data, len);
         }
@@ -181,7 +181,7 @@ private:
             headers.Add("Content-Type", "text/plain; charset=utf-8");
 
             _downstream->WriteHeader(502, "Bad Gateway", headers,
-                                     BodyMode::kFixed, body.size());
+                                     WriterMode::kFixed, body.size());
             _downstream->WriteBody(body.data(), body.size());
         }
 
@@ -246,10 +246,10 @@ private:
     }
 
     http::HttpRequest _request;
-    std::unique_ptr<UpstreamClient> _upstream;
-    std::shared_ptr<DownstreamSink> _downstream;
+    std::unique_ptr<HttpClientSession> _upstream;
+    std::shared_ptr<http::HttpResponseWriter> _downstream;
 
-    BodyMode _mode = BodyMode::kNone;
+    WriterMode _mode = WriterMode::kNone;
     size_t _content_length = 0;
 
     bool _started = false;
