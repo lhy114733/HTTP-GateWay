@@ -15,6 +15,8 @@ namespace http
 class HttpRequestWriter
 {
 public:
+    // 把报文序列化
+    // 这些Header不怕被重复添加吗？？
     // host 是 Host header，例如 "api.deepseek.com" 或 "127.0.0.1:8080"。
     // 为空时尝试用 request.headers 里的 Host。
     static std::string Build(const HttpRequest &request,
@@ -36,11 +38,12 @@ public:
         std::string out;
         out.reserve(256 + request.body.size());
 
-        out.append(method.data(), method.size());
+        out.append(method.data(), method.size()); // 方法
         out.push_back(' ');
-        out.append(target.data(), target.size());
-        out += " HTTP/1.1\r\n";
+        out.append(target.data(), target.size()); // 目标url
+        out += " HTTP/1.1\r\n"; //版本
 
+        // 加Host头
         if (!host_value.empty())
         {
             out += "Host: ";
@@ -48,6 +51,7 @@ public:
             out += "\r\n";
         }
 
+        // 加剩余Header
         for (const Header &header : request.headers.All())
         {
             if (IsSkippedHeader(header.name)) continue;
@@ -58,13 +62,16 @@ public:
             out += "\r\n";
         }
 
+        // Header：Accept-Encoding
         // 上游响应可能是 gzip；当前响应解析器不解压，先要求 identity。
         out += "Accept-Encoding: identity\r\n";
 
+        // body长度Header：Content-Length
         out += "Content-Length: ";
         out += std::to_string(request.body.size());
         out += "\r\n";
 
+        // 是否长连接Header：Connection
         out += keep_alive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
         out += "\r\n";
         out.append(request.body);
@@ -73,6 +80,7 @@ public:
     }
 
 private:
+    // 有啥用？
     static bool IsSkippedHeader(std::string_view name)
     {
         // 这些要么由 writer 重新生成，要么是逐跳 header，不能透传给上游。

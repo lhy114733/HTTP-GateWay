@@ -51,7 +51,7 @@ public:
                                size_t max_headers = kHeaderArraySize)
         : _max_header(max_header),
           _max_body(max_body),
-          _max_headers(max_headers > kHeaderArraySize ? kHeaderArraySize : max_headers)
+          _max_headers(max_headers > kHeaderArraySize ? kHeaderArraySize : max_headers) // 选大的
     {
     }
 
@@ -63,7 +63,7 @@ public:
         if (_state == State::kComplete)
         {
             // 调用方忘了 Reset；不能把下一条请求静默丢掉。
-            return Fail(ParseError::kMalformed, consumed);
+            return Fail(ParseError::kMalformed, consumed); //有啥用？
         }
 
         size_t used = 0;
@@ -94,6 +94,7 @@ public:
             if (ret == -2) return ParseStatus::NeedMore;
             if (ret == -1) return Fail(ParseError::kMalformed, consumed);
 
+            // header总字节总数大于max_header，或http版本大于1.1
             const size_t header_len = static_cast<size_t>(ret);
             if (header_len > _max_header)
             {
@@ -104,6 +105,7 @@ public:
                 return Fail(ParseError::kMalformed, consumed);
             }
 
+            // 解析头没问题，填入_request报文请求行和头
             _request.method.assign(method, method_len);
             _request.target.assign(target, target_len);
             _request.minor_version = minor_version;
@@ -113,7 +115,7 @@ public:
             {
                 const std::string_view value(
                     headers[i].value == nullptr ? "" : headers[i].value,
-                    headers[i].value_len);
+                    headers[i].value_len); // 拿到value
 
                 if (headers[i].name == nullptr)
                 {
@@ -123,27 +125,32 @@ public:
                     }
                     continue;
                 }
-
+                // 拿到name
                 const std::string_view name(headers[i].name, headers[i].name_len);
                 _request.headers.Add(name, value);
             }
 
+            // 看看有没有transfer-encoding，content_length_count是否有多个
             const bool has_transfer_encoding = _request.headers.Has("transfer-encoding");
             const size_t content_length_count = _request.headers.Count("content-length");
 
+            // 两者都有->错误
             if (has_transfer_encoding && content_length_count > 0)
             {
                 return Fail(ParseError::kBadContentLength, consumed);
             }
+            // 只有content_length_count，不支持传输编码（chunk）
             if (has_transfer_encoding)
             {
                 return Fail(ParseError::kUnsupportedTransferEncoding, consumed);
             }
+            // content_length_count数量大于2
             if (content_length_count > 1)
             {
                 return Fail(ParseError::kBadContentLength, consumed);
             }
 
+            // 正好一个content_length，获得body_len
             size_t body_len = 0;
             if (content_length_count == 1)
             {
@@ -158,18 +165,23 @@ public:
                 }
             }
 
+            // 设置keeplilve，根据情况添加到_request
             ComputeKeepAlive();
 
+            // 设置used和remaining
             _body_remaining = body_len;
             used += header_len;
+            // 该状态
             _state = _body_remaining == 0 ? State::kComplete : State::kBody;
         }
 
         if (_state == State::kBody)
         {
-            const size_t available = bytes.size() - used;
-            const size_t take = std::min(_body_remaining, available);
+            const size_t available = bytes.size() - used; //每次重新调用used都会被清0
+            // take，body最够则取一个，body不够则取完
+            const size_t take = std::min(_body_remaining, available); 
 
+            // 从bytes取body
             if (take > 0)
             {
                 _request.body.append(bytes.data() + used, take);
@@ -177,6 +189,7 @@ public:
                 _body_remaining -= take;
             }
 
+            // 说明一个报文正好取完，修改状态，修改consumed，返回Complete
             if (_body_remaining == 0)
             {
                 _state = State::kComplete;
@@ -184,6 +197,7 @@ public:
                 return ParseStatus::Complete;
             }
 
+            // 说明没取完body，状态还在kBody，修改consumed，返回NeedMore
             consumed = used;
             return ParseStatus::NeedMore;
         }
@@ -195,13 +209,14 @@ public:
             return ParseStatus::Complete;
         }
 
+        // 防御性写法，增加鲁棒性
         consumed = used;
         return ParseStatus::NeedMore;
     }
 
-    const HttpRequest &Request() const { return _request; }
+    const HttpRequest &Request() const { return _request; } // 获得报文
 
-    ParseError error() const { return _error; }
+    ParseError error() const { return _error; } // 获得错误状态(错误码)
 
     void Reset()
     {
@@ -212,13 +227,14 @@ public:
     }
 
 private:
+    // 主要用于设置错误状态，只要有一个错误，整个连接就废了
     ParseStatus Fail(ParseError error, size_t &consumed)
     {
         // 出错时整条连接都会关闭，不需要再让调用方推进 buffer。
         consumed = 0;
-        _error = error;
+        _error = error; // 设置错误状态
         _state = State::kError;
-        return ParseStatus::Error;
+        return ParseStatus::Error; // 返回的是解析状态
     }
 
     static bool ParseContentLength(std::string_view value, size_t &out)
@@ -262,10 +278,13 @@ private:
     size_t _max_body;
     size_t _max_headers;
 
-    State _state = State::kHeaders;
-    HttpRequest _request;
+    State _state = State::kHeaders; // 正常状态
+    HttpRequest _request; // 最终的报文
     size_t _body_remaining = 0;
-    ParseError _error = ParseError::kNone;
+    ParseError _error = ParseError::kNone; // 错误状态，错误码
 };
 
 } // namespace http
+
+
+// 理解状态机的使用

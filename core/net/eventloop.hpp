@@ -177,7 +177,7 @@ public:
     {
         while(1) // 理解eventloop是一个事件循环，poller可不是，每次循环都执行一次poller
         {
-            //监听事件
+            //获取就绪事件
             std::vector<Channel*> active;
             _poller.Poll(active);
             //处理就绪事件
@@ -319,6 +319,7 @@ public:
     }
 };
 
+// 从属线程池，只需要知道主循环(主线程)是哪个就行了，不开辟主线程，只开辟从属线程
 class LoopThreadPool 
 {
 private:

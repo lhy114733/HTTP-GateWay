@@ -30,6 +30,7 @@ public:
         : _loop(loop), _connector(loop, port, std::move(ip)),
           _conn(nullptr), _conn_id(0)
     {
+        // 设置connect成功与失败的回调
         _connector.SetConnectedCallback(
             std::bind(&TcpClient::HandleNewConnection, this, std::placeholders::_1));
         _connector.SetErrorCallback(
@@ -72,7 +73,7 @@ public:
     }
 
 private:
-    void HandleNewConnection(int fd)
+    void HandleNewConnection(int fd) // 最终给HandleWrite调
     {
         if (_aborted)
         {
@@ -80,11 +81,12 @@ private:
             return;
         }
 
+        // 创建make_shared<Connection>，设置回调，只是没有SetAnyCallBack了
         _conn = std::make_shared<Connection>(++_conn_id, fd, _loop);
         _conn->SetConnectedCallback(_connected_callback);
         _conn->SetMessageCallback(_message_callback);
         _conn->SetClosedCallback(_closed_callback);
-        _conn->Established();
+        _conn->Established(); //就绪初始化，主要是调用_connected_callback
     }
 
     void HandleConnectError(int err)
@@ -103,3 +105,6 @@ private:
     ClosedCallback _closed_callback;
     ConnectErrorCallback _connect_error_callback;
 };
+
+// Client的connect(socket)和connect成功后connection(一个连接)用的是同一个fd
+// connection，connector，acceptor都有一个Socket，只是conector成功的话会共用，acceptor一直独占一个

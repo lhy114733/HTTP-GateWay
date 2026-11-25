@@ -15,12 +15,14 @@ namespace http
 namespace detail
 {
 
+// ASCII 转小写；非 A-Z 字符原样返回。
 inline char ToLowerAscii(char c)
 {
     if (c >= 'A' && c <= 'Z') return static_cast<char>(c - 'A' + 'a');
     return c;
 }
 
+// 把整个字符串转成小写，用于 header name 比较。
 inline std::string ToLowerAscii(std::string_view text)
 {
     std::string result;
@@ -29,6 +31,7 @@ inline std::string ToLowerAscii(std::string_view text)
     return result;
 }
 
+// 去掉首尾 OWS（空格和 tab），中间空白保留。
 inline std::string_view TrimOws(std::string_view text)
 {
     while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
@@ -42,6 +45,7 @@ inline std::string_view TrimOws(std::string_view text)
     return text;
 }
 
+// 大小写不敏感比较，用于 header name 和 token。
 inline bool EqualsIgnoreCase(std::string_view left, std::string_view right)
 {
     if (left.size() != right.size()) return false;
@@ -77,7 +81,9 @@ struct Header
 // 保留 header 的插入顺序和重复项；Get 返回第一个，GetAll 返回全部。
 class HeaderMap
 {
+    // private: vector<Header> _headers
 public:
+    // 追加一个 header：name 转小写，value 去首尾 OWS；允许重复。
     void Add(std::string_view name, std::string_view value)
     {
         _headers.push_back(Header{
@@ -85,12 +91,14 @@ public:
             std::string(detail::TrimOws(value))});
     }
 
+    // 覆盖同名 header：先删除所有同名项，再追加一个。
     void Set(std::string_view name, std::string_view value)
     {
         Remove(name);
         Add(name, value);
     }
 
+    // 返回第一个同名 header 的 value；不存在时返回 nullptr。
     const std::string *Get(std::string_view name) const
     {
         const std::string lower = detail::ToLowerAscii(name);
@@ -101,6 +109,7 @@ public:
         return nullptr;
     }
 
+    // 返回所有同名 header 的 value 拷贝，保留重复项。
     std::vector<std::string> GetAll(std::string_view name) const
     {
         const std::string lower = detail::ToLowerAscii(name);
@@ -112,11 +121,13 @@ public:
         return values;
     }
 
+    // 判断是否存在某个 header。
     bool Has(std::string_view name) const
     {
         return Get(name) != nullptr;
     }
 
+    // 统计同名 header 的数量，用于检测重复 Content-Length。
     size_t Count(std::string_view name) const
     {
         const std::string lower = detail::ToLowerAscii(name);
@@ -128,6 +139,7 @@ public:
         return count;
     }
 
+    // 删除所有同名 header。
     void Remove(std::string_view name)
     {
         const std::string lower = detail::ToLowerAscii(name);
@@ -149,6 +161,7 @@ public:
         return true;
     }
 
+    // 判断该 header 的逗号分隔列表中是否包含指定 token。
     bool HasToken(std::string_view name, std::string_view token) const
     {
         const std::string lower = detail::ToLowerAscii(name);
@@ -162,8 +175,10 @@ public:
         return false;
     }
 
+    // 返回全部 header 的只读列表，保持插入顺序。
     const std::vector<Header> &All() const { return _headers; }
 
+    // 清空所有 header。
     void Clear() { _headers.clear(); }
 
 private:
@@ -179,6 +194,7 @@ struct HttpRequest
     std::string body;
     bool keep_alive = true;
 
+    // 返回 "HTTP/1.0" 或 "HTTP/1.1"。
     std::string VersionString() const
     {
         return "HTTP/1." + std::to_string(minor_version);
@@ -194,12 +210,14 @@ struct HttpResponse
     std::string body;
     bool keep_alive = true;
 
+    // 返回 "HTTP/1.0" 或 "HTTP/1.1"。
     std::string VersionString() const
     {
         return "HTTP/1." + std::to_string(minor_version);
     }
 };
 
+// ParseStatus是调用Parse()返回的，配合consumed；ParseError是在类里记录的，需要自己看
 enum class ParseStatus
 {
     NeedMore,
@@ -207,6 +225,9 @@ enum class ParseStatus
     Error
 };
 
+// Status(StatusChunk)，这是类内部用来记录状态的，这里的两个是给上层看的！！！！
+
+// ParseStatus是调用Parse()返回的，配合consumed；ParseError是在类里记录的，需要自己看
 enum class ParseError
 {
     kNone,

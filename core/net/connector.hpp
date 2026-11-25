@@ -53,6 +53,8 @@ public:
     Connector(const Connector&) = delete;
     Connector& operator=(const Connector&) = delete;
 
+    // 客户端设置成功回调于失败回调，而服务端只设置成功回调
+    // 因为connect可能成功可能失败，accpet只会得到成功的
     void SetConnectedCallback(ConnectedCallback cb) { _on_connected = std::move(cb); }
     void SetErrorCallback(ErrorCallback cb) { _on_error = std::move(cb); }
 
@@ -63,7 +65,7 @@ public:
         if (timeout_sec > 60) timeout_sec = 60;
 
         // 保证 socket/channel/epoll_ctl 都在 loop 线程里操作。
-        _loop->RunInLoop([this, timeout_sec]() { StartInLoop(timeout_sec); });
+        _loop->RunInLoop([this, timeout_sec]() { StartConnectInLoop(timeout_sec); });
     }
 
     // 停止连接尝试；不触发 error callback。
@@ -92,11 +94,12 @@ private:
         FAILED
     };
 
-    void StartInLoop(int timeout_sec)
+    void StartConnectInLoop(int timeout_sec)
     {
         if (_state != DISCONNECTED) return; // 一次性对象，防止重复 StartConnect
         _state = CONNECTING;
 
+        // 创建客户端socket
         // 这里不用 Socket::CreateClient：它会把“connect 立即失败”的 errno 吃掉。
         // 分三步做，失败时能把真实 errno 传给错误回调。
         if (!_socket.Create())
@@ -111,12 +114,15 @@ private:
             return;
         }
 
+        // socket创建成功并发起connect后才创建channel用于监听，并设置channel回调
         _channel = std::make_unique<Channel>(_socket.Fd(), _loop);
         _channel->SetWriteCallback([this]() { HandleWrite(); });
         _channel->SetErrorCallback([this]() { HandleError(); });
         _channel->SetCloseCallback([this]() { HandleError(); });
+        // 启动写监听
         _channel->EnableWriteMonitor();
 
+        // 设置连接时长，超时则关闭socket，并调用_on_error
         _timer_id = NextTimerId();
         _loop->AddTimertask(_timer_id, static_cast<uint32_t>(timeout_sec), [this]() {
             if (_state == CONNECTING) Finish(ETIMEDOUT);
@@ -135,6 +141,7 @@ private:
         {
             err = errno;
         }
+        // 可写说明连接成功，把状态改为CONNECTED，并调用_on_connected
         Finish(err);
     }
 
@@ -152,15 +159,16 @@ private:
         Finish(err);
     }
 
+    // 调用这个要么失败了，要么成功了
     void Finish(int err)
     {
         if (_state != CONNECTING) return;
-        CancelTimer();
+        CancelTimer(); // 取消超时关闭
 
         // 先把旧 channel 从 poller 摘掉，再回调。回调里 TcpClient 会在同一个 fd
         // 上创建 Connection 的新 Channel，不能让它和旧 Channel 在 Poller 的
         // fd->channel 表里打架。
-        if (_channel)
+        if (_channel) 
         {
             _channel->Remove();
             _channel_removed = true;
@@ -172,8 +180,7 @@ private:
             if (fd < 0)
             {
                 _state = FAILED;
-                auto cb = _on_error;
-                if (cb) cb(EBADF);
+                if (_on_error) _on_error(EBADF);
                 return;
             }
 
@@ -182,15 +189,14 @@ private:
 
             _state = CONNECTED;
             // 回调可能销毁 Connector，先拷到局部变量，调用后不再碰 this。
-            auto cb = _on_connected;
-            if (cb) cb(fd);
+            if (_on_connected) _on_connected(fd);
             return;
         }
 
+        // 走到这里说明超时了或者失败了，调用失败回调
         _socket.Close();
         _state = FAILED;
-        auto cb = _on_error;
-        if (cb) cb(err);
+        if (_on_error) _on_error(err);
     }
 
     void CancelTimer()
@@ -220,6 +226,9 @@ private:
     State _state;
     bool _channel_removed; // 防止析构时把 Connection 新挂上的同 fd Channel 删掉
 
-    ConnectedCallback _on_connected;
-    ErrorCallback _on_error;
+    ConnectedCallback _on_connected; // connect成功回调
+    ErrorCallback _on_error; // connect失败回调
 };
+
+
+// 发现这一层多的回调，都是用在给上一层的设置回调(HandleWrite，HandleError)中的

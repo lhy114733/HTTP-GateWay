@@ -67,6 +67,7 @@ int main(int argc, char *argv[])
 
     setvbuf(stdout, nullptr, _IONBF, 0);
 
+    // 加载网关最小配置
     gateway::Config gateway_config;
     std::string config_error;
     if (!gateway::LoadConfigFromEnv(gateway_config, &config_error))
@@ -74,7 +75,7 @@ int main(int argc, char *argv[])
         std::fprintf(stderr, "%s\n", config_error.c_str());
         return 1;
     }
-
+    // 增加默认的gateway和tenant用来身份识别
     gateway::Authenticator authenticator;
     authenticator.AddKey(gateway_config.gateway_key,
                          gateway::Tenant{gateway_config.gateway_tenant});
@@ -100,6 +101,7 @@ int main(int argc, char *argv[])
     }
     const std::string connect_ip = connect_addresses.front();
 
+    // 代理管理和服务器
     proxy::ProxyManager manager;
     HttpServer proxy(proxy_port, 0);
 
@@ -108,34 +110,39 @@ int main(int argc, char *argv[])
          upstream_host, upstream_port, connect_ip, connect_port](
             const http::HttpRequest &request,
             std::shared_ptr<http::HttpResponseWriter> writer,
-            const std::shared_ptr<Connection> &conn) -> std::function<void()> {
-            const gateway::AuthResult auth = authenticator.Authenticate(request);
-            if (!auth.ok)
+            const std::shared_ptr<Connection> &conn) -> std::function<void()> 
             {
-                SendAuthError(writer, conn);
-                return {};
-            }
+                // 对于收到的报文先身份识别
+                const gateway::AuthResult auth = authenticator.Authenticate(request);
+                if (!auth.ok)
+                {
+                    SendAuthError(writer, conn);
+                    return {};
+                }
 
-            // 网关 key 不进入 ProxySession，也不进入上游请求。
-            http::HttpRequest upstream_request = request;
-            upstream_request.headers.Remove("authorization");
-            upstream_request.headers.Remove("proxy-authorization");
+                // 处理request报文，处理完给SessionManager.Start->新的ProxySession->完成代理
+                // 网关 key 不进入 ProxySession，也不进入上游请求。
+                // 走到这里说明身份识别对了，去掉request中的这两个字段
+                http::HttpRequest upstream_request = request;
+                upstream_request.headers.Remove("authorization");
+                upstream_request.headers.Remove("proxy-authorization");
 
-            auto upstream = std::make_unique<HttpClientSession>(
-                conn->GetLoop(), upstream_host, upstream_port,
-                connect_ip, connect_port);
-            upstream->SetUpstreamAuth(
-                "Authorization", "Bearer " + gateway_config.provider_key);
+                auto upstream = std::make_unique<HttpClientSession>(
+                    conn->GetLoop(), upstream_host, upstream_port,
+                    connect_ip, connect_port);
+                upstream->SetUpstreamAuth(
+                    "Authorization", "Bearer " + gateway_config.provider_key);
 
-            auto post = [loop = conn->GetLoop()](std::function<void()> task) {
-                loop->QueueInLoop(std::move(task));
-            };
+                auto post = [loop = conn->GetLoop()](std::function<void()> task) {
+                    loop->QueueInLoop(std::move(task));
+                };
 
-            auto session = manager.Start(std::move(upstream), std::move(writer),
-                                         std::move(upstream_request), post);
+                //这一步包含了：新建一个ProxySession，ProxySession给upstream设置了回调并发送请求
+                auto session = manager.Start(std::move(upstream), std::move(writer),
+                                            std::move(upstream_request), post);
 
-            return [session]() {
-                session->Cancel();
+                return [session]() {
+                    session->Cancel();
             };
         });
 

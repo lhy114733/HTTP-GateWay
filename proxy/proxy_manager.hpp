@@ -31,6 +31,8 @@ public:
         http::HttpRequest request,
         Post post = {})
     {
+        // 创建一个ProxySession，加入活跃代理，返回新建的session的指针
+        // ProxySession给HTTPClient设置的回调写到ProxySession自己里面了
         auto session = std::make_shared<ProxySession>(
             std::move(upstream), std::move(downstream), std::move(request));
 
@@ -52,7 +54,7 @@ public:
             }
         });
 
-        session->Start();
+        session->Start(); // 开始发送
         return session;
     }
 

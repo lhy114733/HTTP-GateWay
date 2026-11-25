@@ -69,21 +69,24 @@ public:
                      BodyMode mode,
                      size_t content_length = 0)
     {
-        if (_header_sent) return;
-        if (_finished) return;
-        _header_sent = true;
+        if (_header_sent) return; // 已发送header
+        if (_finished) return; // 已发送完，都直接返回
+        _header_sent = true; //说明已发送
 
+        // 有reason就直接用提供的reason，没有就StatusText(status)解析状态码的reason
         const std::string_view text = reason.empty() ? StatusText(status) : reason;
 
         std::string out;
         out.reserve(256);
 
+        // 写响应行
         out += "HTTP/1.1 ";
         out += std::to_string(status);
         out.push_back(' ');
         out.append(text.data(), text.size());
         out += "\r\n";
 
+        // 写报头，跳过IsWriterManagedHeader的Header
         for (const Header &header : headers.All())
         {
             if (IsWriterManagedHeader(header.name)) continue;
@@ -94,6 +97,7 @@ public:
             out += "\r\n";
         }
 
+        // 写body相关Header：Content-Length || Transfer-Encoding
         if (mode == BodyMode::kFixed)
         {
             out += "Content-Length: ";
@@ -105,11 +109,12 @@ public:
             out += "Transfer-Encoding: chunked\r\n";
         }
 
+        // 写是否长连接Header：Connection
         out += _keep_alive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
         out += "\r\n";
 
         _mode = mode;
-        Emit(out.data(), out.size());
+        Emit(out.data(), out.size()); // 发送给客户端
     }
 
     // kFixed 模式下的 body。
@@ -142,6 +147,7 @@ public:
         if (_finished) return;
         _finished = true;
 
+        // kChunked模式下补上 0\r\n\r\n
         if (_header_sent && _mode == BodyMode::kChunked)
         {
             Emit("0\r\n\r\n", 5);
@@ -149,13 +155,12 @@ public:
 
         if (_finish_callback)
         {
-            auto callback = std::move(_finish_callback);
-            callback();
+            _finish_callback();
         }
     }
 
+    // 是否发完头，是否发完body
     bool finished() const { return _finished; }
-
     bool header_sent() const { return _header_sent; }
 
     static std::string_view StatusText(int status)
@@ -202,7 +207,8 @@ private:
         if (_sink && len > 0) _sink(data, len);
     }
 
-    ByteSink _sink;
+    ByteSink _sink; // 理解发出回调的意义，参数是data和len，发给谁怎么发由设置回调函数的人决定，
+    // 类似于一个约定，调用这个回调就是为了发送，实现了发送方式的解耦
     FinishCallback _finish_callback;
     bool _keep_alive;
     bool _header_sent = false;

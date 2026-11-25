@@ -62,6 +62,7 @@ class Any{
 //DISCONECTED -- 连接关闭状态；   CONNECTING -- 连接建立成功-待处理状态
 //CONNECTED -- 连接建立完成，各种设置已完成，可以通信的状态；  DISCONNECTING -- 待关闭状态
 typedef enum { DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING}ConnStatus;
+// 一个对象可不是建出来就有shared_ptr的，用了shared_ptr才有shared_ptr和weak_ptr
 class Connection : public std::enable_shared_from_this<Connection> //继承的这个类，原理：内部生成一个weak_ptr
 {
 private:
@@ -90,6 +91,7 @@ private:
     /*就应该从管理的地方移除掉自己的信息*/
     ClosedCallback _server_closed_callback;
 private:
+    // 这些Handle调用的回调全是用户设置的回调，感觉业务处理就是一层一层回调堆出来的
     void HandleRead()
     {
         // 1. 读取socket读取就绪数据到_in_buffer
@@ -207,10 +209,10 @@ public:
     void SetSrvClosedCallback(const ClosedCallback&cb) { _server_closed_callback = cb; }
 
     // 半连接后的处理
+    // 1. 修改连接状态；  2. 启动读事件监控；  3. 调用回调函数(connected_callback,由用户设置)
     void Established() 
     {
         _loop->RunInLoop([this](){
-            // 1. 修改连接状态；  2. 启动读事件监控；  3. 调用回调函数
             assert(_status == CONNECTING);//当前的状态必须一定是上层的半连接状态
             _status = CONNECTED;//当前函数执行完毕，则连接进入已完成连接状态
             // 一旦启动读事件监控就有可能会立即触发读事件，如果这时候启动了非活跃连接销毁
@@ -218,9 +220,13 @@ public:
             // 读监控已经就位，不会出现"写监控先挂上、读监控后补"的中间态
             _channel.EnableReadMonitor();
             if (_connected_callback) _connected_callback(shared_from_this());
+            // 这个回调里面如果写conn->Send()，等于在这里直接调Send(),因为类内知道自己的this指针，省略写了
         });
     }
 
+    // this指针的精妙之处，理解这里省略的this指针，最终都会被编译器填上的。
+    // _connected_callback(shared_from_this())是**手动传了this指针**，
+    // 编译器懂就行
     void Send(const char *data, size_t len)
     {
         //拷贝必须在 Send() 返回之前完成：RunInLoop 若只是把任务排队，等任务真正执行时
@@ -261,7 +267,7 @@ public:
         //回到 HandleEvent 继续读 _revents / 调 _event_callback 就是 use-after-free。
         //捕获 self：客户端场景下 TcpClient 可能在 closed 回调后立刻释放 _conn，
         //不能让排队中的 lambda 继续拿着裸 this。
-        auto self = shared_from_this();
+        auto self = shared_from_this(); //对于服务端这一行没用
         _loop->QueueInLoop([self](){
             //1. 修改连接状态，将其置为DISCONNECTED
             self->_status = DISCONNECTED;
@@ -300,3 +306,6 @@ public:
     ~Connection()
     {}
 };
+
+// Send(),Shutdown(),Release(),EnableInactiveRelease(),CancelInactiveRelease(),Upgrade()应该是给用户用于设置回调函数的，
+// 剩下的都是给TcpServer用的(回调设置,就绪初始化,启动非活跃连接销毁)，集中在HandleNewConnection
