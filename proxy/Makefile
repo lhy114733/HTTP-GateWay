@@ -15,7 +15,7 @@ $(PICO_OBJ): ../core/http/picohttpparser.c | $(BUILD)
 	$(CC) -std=c99 -O2 -Wall -Wextra -Wno-unused-parameter -c $< -o $@
 
 $(PROXY_TEST): ../example/proxy_server_test.cc proxy_session.hpp proxy_manager.hpp \
-		../adapter/runtime/host_resolver.hpp \
+		../core/net/host_resolver.hpp \
 		../core/http/http_server.hpp ../core/http/http_server_session.hpp \
 		../core/http/http_client.hpp \
 		../gateway/auth.hpp ../gateway/config.hpp \
