@@ -3,60 +3,9 @@
 #include "buffer.hpp"
 #include "socket.hpp"
 #include "channel.hpp"
+#include <string>
+#include <utility>
 #include <unistd.h>
-
-class Any{
-    private:
-        class holder {
-            public:
-                virtual ~holder() {}
-                virtual const std::type_info& type() = 0;
-                virtual holder *clone() = 0;
-        };
-        template<class T>
-        class placeholder: public holder {
-            public:
-                placeholder(const T &val): _val(val) {}
-                // 获取子类对象保存的数据类型
-                virtual const std::type_info& type() { return typeid(T); }
-                // 针对当前的对象自身，克隆出一个新的子类对象
-                virtual holder *clone() { return new placeholder(_val); }
-            public:
-                T _val;
-        };
-        holder *_content;
-    public:
-        Any():_content(NULL) {}
-        template<class T>
-        Any(const T &val):_content(new placeholder<T>(val)) {}
-        Any(const Any &other):_content(other._content ? other._content->clone() : NULL) {}
-        ~Any() { delete _content; }
-
-        Any &swap(Any &other) {
-            std::swap(_content, other._content);
-            return *this;
-        }
-
-        // 返回子类对象保存的数据的指针
-        template<class T>
-        T *get() {
-            //想要获取的数据类型，必须和保存的数据类型一致
-            assert(typeid(T) == _content->type());
-            return &((placeholder<T>*)_content)->_val;
-        }
-        //赋值运算符的重载函数
-        template<class T>
-        Any& operator=(const T &val) {
-            //为val构造一个临时的通用容器，然后与当前容器自身进行指针交换，临时对象释放的时候，原先保存的数据也就被释放
-            Any(val).swap(*this);
-            return *this;
-        }
-        Any& operator=(const Any &other) {
-            Any(other).swap(*this);
-            return *this;
-        }
-};
-
 
 // 链接模块class Connection;
 //DISCONECTED -- 连接关闭状态；   CONNECTING -- 连接建立成功-待处理状态
@@ -71,13 +20,18 @@ private:
     bool _enable_inactive_release;
     Buffer _in_buffer; //读缓冲区
     Buffer _out_buffer; //写缓冲区
+    bool _read_paused = false;
+    bool _output_aborted = false;
+    bool _output_pressured = false;
+    size_t _output_low = 0;
+    size_t _output_high = 0;
+    size_t _output_limit = 0;
+    std::function<void(bool)> _output_pressure_callback;
 
     int _sockfd; 
     Socket _socket;
     Eventloop* _loop;
     Channel _channel;
-
-    Any _context; //上下文
 
     using ConnectedCallback = std::function<void(const std::shared_ptr<Connection>&)>;
     using MessageCallback = std::function<void(const std::shared_ptr<Connection>&, Buffer *)>;
@@ -94,6 +48,8 @@ private:
     // 这些Handle调用的回调全是用户设置的回调，感觉业务处理就是一层一层回调堆出来的
     void HandleRead()
     {
+        if (_read_paused || _output_aborted || _status == DISCONNECTED) return;
+
         // 1. 读取socket读取就绪数据到_in_buffer
         char buf[65536];
         ssize_t ret = _socket.Recv(buf, 65535);
@@ -120,6 +76,14 @@ private:
     }
     void HandleWrite()
     {
+        if (_output_aborted || _status == DISCONNECTED) return;
+        if (_read_paused && _channel.HasHangup())
+        {
+            // 挂断后留到恢复读取时取完对端已发送的数据。
+            _channel.DisableWriteMonitor();
+            return;
+        }
+
         // 这里可以用Buffer的Read读出来数据再发送。这里直接用Position省了一步，还要自己移动索引，
         // 没看出Buffer的Read的意义是啥，垃圾代码，封装性太差
         ssize_t ret = _socket.Send(_out_buffer.ReadPositon(), _out_buffer.AbleReadSpace());
@@ -128,7 +92,8 @@ private:
             // 发送出错了，数据发不出去了，直接release()
             return Release();
         }
-        _out_buffer.MoveReadIdx(ret); //向后移动读指针，这一步为什么不放到Send里？？？
+        _out_buffer.MoveReadIdx(ret);
+        UpdateOutputPressure();
         // 第一次开启写监听是第一次调Send的时候，必须直到发送完才结束写监听，要一直发送的。等到输出缓冲区里有数据了再打开写监听。
         // 而读监听是一直打开的
         // 理解，读数据是一有数据发来就要读并且处理，所以一直要都监听；
@@ -145,6 +110,13 @@ private:
     }
     void HandleClose()
     {
+        if (_output_aborted || _status == DISCONNECTED) return;
+        if (_read_paused)
+        {
+            _channel.DisableWriteMonitor();
+            return;
+        }
+
         if(_in_buffer.AbleReadSpace() > 0 && _message_callback)
         {
             _message_callback(shared_from_this(),&_in_buffer);
@@ -161,18 +133,36 @@ private:
         if (_event_callback)  {  _event_callback(shared_from_this()); }
     }
 
-    void UpgradeForBind(const Any &context, 
-                    const ConnectedCallback &conn, 
-                    const MessageCallback &msg, 
-                    const ClosedCallback &closed, 
-                    const AnyEventCallback &event) 
+    void UpdateOutputPressure()
     {
-        _context = context;
-        _connected_callback = conn;
-        _message_callback = msg;
-        _closed_callback = closed;
-        _event_callback = event;
+        if (_output_limit == 0) return;
+
+        const auto pending = _out_buffer.AbleReadSpace();
+        const bool pressured = _output_pressured ? pending > _output_low : pending >= _output_high;
+        if (pressured == _output_pressured) return;
+
+        _output_pressured = pressured;
+        if (_output_pressure_callback) _output_pressure_callback(pressured);
     }
+
+    void SendInLoop(const char *data, size_t len)
+    {
+        if (_status == DISCONNECTED || _output_aborted) return;
+
+        const auto pending = _out_buffer.AbleReadSpace();
+        if (_output_limit != 0 &&
+            (pending > _output_limit || len > _output_limit - pending))
+        {
+            _output_aborted = true;
+            Release();
+            return;
+        }
+
+        _out_buffer.Write(data, len);
+        if (!_channel.WriteAble()) _channel.EnableWriteMonitor();
+        UpdateOutputPressure();
+    }
+
     void EnableInactiveReleaseForBind(int sec) {
         //1. 将判断标志 _enable_inactive_release 置为true
         _enable_inactive_release = true;
@@ -198,8 +188,36 @@ public:
         _channel.SetErrorCallback(std::bind(&Connection::HandleError, this));
     }
     int Id() { return _conn_id; }
-
     Eventloop *GetLoop() { return _loop; }
+
+    // 在所属 loop 上设置，回调可能立即报告当前连接仍有积压。
+    void SetOutputWatermarks(size_t low, size_t high, size_t limit,
+                             std::function<void(bool)> callback)
+    {
+        assert(_loop->IsInLoopThread());
+        assert(low < high && high < limit);
+        _output_low = low;
+        _output_high = high;
+        _output_limit = limit;
+        _output_pressure_callback = std::move(callback);
+
+        const auto pending = _out_buffer.AbleReadSpace();
+        _output_pressured = _output_pressured ? pending > low : pending >= high;
+        if (_output_pressured && _output_pressure_callback) _output_pressure_callback(true);
+    }
+
+    bool OutputAborted() const { return _output_aborted; }
+
+    void SetReadPaused(bool paused)
+    {
+        assert(_loop->IsInLoopThread());
+        if (_status == DISCONNECTED || _read_paused == paused) return;
+
+        _read_paused = paused;
+        if (_status == CONNECTING) return;
+        if (paused) _channel.DisableReadMonitor();
+        else _channel.EnableReadMonitor();
+    }
 
     // 回调函数
     void SetConnectedCallback(const ConnectedCallback&cb) { _connected_callback = cb; }
@@ -218,7 +236,7 @@ public:
             // 一旦启动读事件监控就有可能会立即触发读事件，如果这时候启动了非活跃连接销毁
             // 先启动读监控再调回调（参考实现的顺序）：回调里如果立刻Send或Release，
             // 读监控已经就位，不会出现"写监控先挂上、读监控后补"的中间态
-            _channel.EnableReadMonitor();
+            if (!_read_paused) _channel.EnableReadMonitor();
             if (_connected_callback) _connected_callback(shared_from_this());
             // 这个回调里面如果写conn->Send()，等于在这里直接调Send(),因为类内知道自己的this指针，省略写了
         });
@@ -229,20 +247,23 @@ public:
     // 编译器懂就行
     void Send(const char *data, size_t len)
     {
-        //拷贝必须在 Send() 返回之前完成：RunInLoop 若只是把任务排队，等任务真正执行时
-        //data 指向的临时空间可能早就释放了。所以先同步拷进 buf，再按值捕获进 lambda。
-        Buffer buf;
-        buf.Write(data, len);
-        _loop->RunInLoop([this, buf]() mutable {
-            // 只需要把要发送的数据放入缓冲区并启动写监控就算完成，剩下的交给handlewrite做
-            if(_status == DISCONNECTED) { return; }
-            _out_buffer.Write(buf);
-            if(_channel.WriteAble() == false) _channel.EnableWriteMonitor();
+        if (len == 0) return;
+        if (_loop->IsInLoopThread())
+        {
+            SendInLoop(data, len);
+            return;
+        }
+
+        // 跨线程投递时，任务持有字节和连接，直到所属 loop 处理。
+        auto self = shared_from_this();
+        _loop->QueueInLoop([self, bytes = std::string(data, len)]() {
+            self->SendInLoop(bytes.data(), bytes.size());
         });
     }
     void Shutdown()
     {
         _loop->RunInLoop([this](){
+            if (_output_aborted || _status == DISCONNECTED) return;
             _status = DISCONNECTING;
             if(_in_buffer.AbleReadSpace() > 0)
             {
@@ -269,6 +290,7 @@ public:
         //不能让排队中的 lambda 继续拿着裸 this。
         auto self = shared_from_this(); //对于服务端这一行没用
         _loop->QueueInLoop([self](){
+            if (self->_status == DISCONNECTED) return;
             //1. 修改连接状态，将其置为DISCONNECTED
             self->_status = DISCONNECTED;
             //2. 移除连接的事件监控
@@ -297,15 +319,9 @@ public:
             }
         });
     }
-    void Upgrade(const Any &context, const ConnectedCallback &conn, const MessageCallback &msg, 
-                 const ClosedCallback &closed, const AnyEventCallback &event) 
-    {
-        // _loop->AssertInLoop();  这行有必要吗？？？？
-        _loop->RunInLoop(std::bind(&Connection::UpgradeForBind, this, context, conn, msg, closed, event));
-    }
     ~Connection()
     {}
 };
 
-// Send(),Shutdown(),Release(),EnableInactiveRelease(),CancelInactiveRelease(),Upgrade()应该是给用户用于设置回调函数的，
+// Send(),Shutdown(),Release(),EnableInactiveRelease(),CancelInactiveRelease()应该是给用户用于设置回调函数的，
 // 剩下的都是给TcpServer用的(回调设置,就绪初始化,启动非活跃连接销毁)，集中在HandleNewConnection

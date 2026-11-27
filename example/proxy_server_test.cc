@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
 
                 //这一步包含了：新建一个ProxySession，ProxySession给upstream设置了回调并发送请求
                 auto session = manager.Start(std::move(upstream), std::move(writer),
-                                            std::move(upstream_request), post);
+                                            std::move(upstream_request), post, conn);
 
                 return [session]() {
                     session->Cancel();

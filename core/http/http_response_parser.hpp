@@ -317,7 +317,6 @@ public:
     }
 
     const HttpResponse &Response() const { return _response; }
-
     ResponseParseError error() const { return _error; }
 
     void Reset()

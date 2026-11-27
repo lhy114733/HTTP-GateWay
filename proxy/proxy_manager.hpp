@@ -29,12 +29,13 @@ public:
         std::unique_ptr<HttpClient> upstream,
         std::shared_ptr<http::HttpResponseWriter> downstream,
         http::HttpRequest request,
-        Post post = {})
+        Post post = {},
+        const std::shared_ptr<Connection> &downstream_connection = {})
     {
         // 创建一个ProxySession，加入活跃代理，返回新建的session的指针
         // ProxySession给HTTPClient设置的回调写到ProxySession自己里面了
         auto session = std::make_shared<ProxySession>(
-            std::move(upstream), std::move(downstream), std::move(request));
+            std::move(upstream), std::move(downstream), std::move(request), downstream_connection);
 
         const uint64_t id = _next_id.fetch_add(1);
 

@@ -30,10 +30,12 @@ public:
 
     ProxySession(std::unique_ptr<HttpClient> upstream,
                  std::shared_ptr<http::HttpResponseWriter> downstream,
-                 http::HttpRequest request)
+                 http::HttpRequest request,
+                 const std::shared_ptr<Connection> &downstream_connection = {})
         : _request(std::move(request)),
           _upstream(std::move(upstream)),
-          _downstream(std::move(downstream))
+          _downstream(std::move(downstream)),
+          _downstream_connection(downstream_connection)
     {
     }
 
@@ -71,6 +73,14 @@ public:
         _upstream->SetClosedCallback([weak]() {
             if (auto self = weak.lock()) self->OnUpstreamClosed();
         });
+
+        if (auto conn = _downstream_connection.lock())
+        {
+            conn->SetOutputWatermarks(kOutputLow, kOutputHigh, kOutputLimit, [weak](bool paused) {
+                if (auto self = weak.lock(); self && !self->_done)
+                    self->_upstream->SetReadPaused(paused);
+            });
+        }
 
         if (!_upstream->Send(_request))
         {
@@ -163,7 +173,7 @@ private:
         if (!_headers_sent) OnUpstreamHeaders(response);
         if (_done) return;
 
-        if (_downstream) _downstream->Finish();
+        FinishDownstream();
         FinishProxy();
     }
 
@@ -185,7 +195,7 @@ private:
             _downstream->WriteBody(body.data(), body.size());
         }
 
-        if (_downstream) _downstream->Finish();
+        FinishDownstream();
         FinishProxy();
     }
 
@@ -193,6 +203,12 @@ private:
     {
         if (_done) return;
         OnUpstreamError("upstream closed before response");
+    }
+
+    void FinishDownstream()
+    {
+        if (auto conn = _downstream_connection.lock(); conn && conn->OutputAborted()) return;
+        if (_downstream) _downstream->Finish();
     }
 
     void FinishProxy()
@@ -244,9 +260,14 @@ private:
         return true;
     }
 
+    static constexpr size_t kOutputLow = 256 * 1024;
+    static constexpr size_t kOutputHigh = 512 * 1024;
+    static constexpr size_t kOutputLimit = 1024 * 1024;
+
     http::HttpRequest _request;
     std::unique_ptr<HttpClient> _upstream;
     std::shared_ptr<http::HttpResponseWriter> _downstream;
+    std::weak_ptr<Connection> _downstream_connection;
 
     WriterMode _mode = WriterMode::kNone;
     size_t _content_length = 0;

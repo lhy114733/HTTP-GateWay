@@ -34,6 +34,7 @@ public:
     bool ReadAble() { return (_events & EPOLLIN); } 
     //当前是否监控了可写
     bool WriteAble() { return (_events & EPOLLOUT); }
+    bool HasHangup() const { return (_revents & EPOLLHUP) != 0; }
 
     // channel自己用的(或者说将来的connection用的)，启动或禁用后，修改自己的event，并推给poller(让poller写到内核中)
     //   相当于主动启动或取消可读或可写监听
@@ -53,13 +54,14 @@ public:
     void Remove(); //这个函数到第有用没？？？也没调这个啊
     void HandleEvent()//revent中有就绪事件时调用，eventloop调用
     {
-        if ((_revents & EPOLLIN) || (_revents & EPOLLRDHUP) || (_revents & EPOLLPRI))
-        {
-            if (_read_callback)
-                _read_callback();
-        }
+        if (_events == 0) return;  // 同一批就绪事件中可能已暂停此 Channel。
+        const bool readable = ReadAble() && (_revents & (EPOLLIN | EPOLLRDHUP | EPOLLPRI));
+        if (readable && _read_callback)
+            _read_callback();
+
+        if (_events == 0) return;
         /*有可能会释放连接的操作事件，一次只处理一个*/
-        if (_revents & EPOLLOUT)
+        if (WriteAble() && (_revents & EPOLLOUT))
         {
             if (_write_callback)
                 _write_callback();
@@ -69,7 +71,8 @@ public:
             if (_error_callback)
                 _error_callback(); // 一旦出错，就会释放连接，因此要放到前边调用任意回调
         }
-        else if (_revents & EPOLLHUP)
+        // 挂断和可读同时到达时，由读回调继续取剩余数据，直到 recv 返回 EOF。
+        else if (!readable && HasHangup())
         {
             if (_close_callback)
                 _close_callback();

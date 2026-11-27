@@ -30,10 +30,8 @@ public:
           _conn(nullptr), _conn_id(0)
     {
         // 设置connect成功与失败的回调
-        _connector.SetConnectedCallback(
-            std::bind(&TcpClient::HandleNewConnection, this, std::placeholders::_1));
-        _connector.SetErrorCallback(
-            std::bind(&TcpClient::HandleConnectError, this, std::placeholders::_1));
+        _connector.SetConnectedCallback(std::bind(&TcpClient::HandleNewConnection, this, std::placeholders::_1));
+        _connector.SetErrorCallback(std::bind(&TcpClient::HandleConnectError, this, std::placeholders::_1));
     }
 
     void SetConnectedCallback(const ConnectedCallback& cb) { _connected_callback = cb; }
@@ -52,11 +50,16 @@ public:
         return true;
     }
 
-    // 优雅关闭：先发完 _out_buffer 里剩下的数据，再 Release。
-    void Disconnect()
+    // 连接建立前也保留暂停状态，交给新 Connection。
+    void SetReadPaused(bool paused)
     {
-        if (_conn) _conn->Shutdown();
+        assert(_loop->IsInLoopThread());
+        _read_paused = paused;
+        if (_conn) _conn->SetReadPaused(paused);
     }
+
+    // 优雅关闭：先发完 _out_buffer 里剩下的数据，再 Release。
+    void Disconnect() { if (_conn) _conn->Shutdown(); }
 
     // 立即中止：用于下游断开时停止上游。
     void Abort()
@@ -85,6 +88,7 @@ private:
         _conn->SetConnectedCallback(_connected_callback);
         _conn->SetMessageCallback(_message_callback);
         _conn->SetClosedCallback(_closed_callback);
+        _conn->SetReadPaused(_read_paused);
         _conn->Established(); //就绪初始化，主要是调用_connected_callback
     }
 
@@ -98,6 +102,7 @@ private:
     std::shared_ptr<Connection> _conn; // 管理自己的Connection
     uint64_t _conn_id;
     bool _aborted = false;
+    bool _read_paused = false;
 
     ConnectedCallback _connected_callback;
     MessageCallback _message_callback;

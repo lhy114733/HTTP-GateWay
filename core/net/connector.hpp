@@ -128,11 +128,11 @@ private:
             return;
         }
 
-        // socket创建成功并发起connect后才创建channel用于监听，并设置channel回调
+        // channel回调
         _channel = std::make_unique<Channel>(_socket.Fd(), _loop);
-        _channel->SetWriteCallback([this]() { HandleWrite(); });
-        _channel->SetErrorCallback([this]() { HandleError(); });
-        _channel->SetCloseCallback([this]() { HandleError(); });
+        _channel->SetWriteCallback(std::bind(&Connector::HandleWrite, this));
+        _channel->SetErrorCallback(std::bind(&Connector::HandleError, this) );
+        _channel->SetCloseCallback(std::bind(&Connector::HandleError, this));
         // 启动写监听
         _channel->EnableWriteMonitor();
 
@@ -173,7 +173,7 @@ private:
         Finish(err);
     }
 
-    // 调用这个要么失败了，要么成功了
+    // 超时或连接成功或其他错误
     void Finish(int err)
     {
         if (_state != CONNECTING) return;

@@ -160,7 +160,8 @@ public:
 private:
     void OnResponseFinished()
     {
-        if (!_awaiting_response) return;
+        // 超限关闭后保留取消函数，让 OnClosed 停止上游。
+        if (!_awaiting_response || _conn->OutputAborted()) return;
 
         _awaiting_response = false;
         _cancel = nullptr;

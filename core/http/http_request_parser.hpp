@@ -243,7 +243,6 @@ public:
     }
 
     const HttpRequest &Request() const { return _request; } // 获得报文
-
     RequestParseError error() const { return _error; } // 获得错误状态(错误码)
 
     void Reset()

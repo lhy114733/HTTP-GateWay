@@ -10,7 +10,7 @@ private:
     Channel _channel;
 
     using AcceptCallback = std::function<void(int)>;
-    AcceptCallback _accept_callback;
+    AcceptCallback _on_accept;
 private:
     // 改成static：不碰this->_socket，避免"构造_socket时调用会用到_socket的成员函数"(未定义行为)
     static int CreateServer(uint16_t port, std::string ip)
@@ -25,7 +25,7 @@ private:
         if (newfd < 0) {
             return ;
         }
-        if (_accept_callback) _accept_callback(newfd);  // std::placeholders::_1在这里
+        if (_on_accept) _on_accept(newfd);  // std::placeholders::_1在这里
     }
 public:
     Acceptor(Eventloop* loop, uint16_t port, std::string ip):
@@ -35,5 +35,5 @@ public:
         _channel.SetReadCallback(std::bind(&Acceptor::HandleRead, this));
     }
     void StartAccept() { _channel.EnableReadMonitor(); } // 启动读监控，相当于开始获得已经连接的描述符，叫accept好一点
-    void SetAcceptCallback(const AcceptCallback& cb) { _accept_callback = cb; }
+    void SetAcceptCallback(const AcceptCallback& cb) { _on_accept = cb; }
 };

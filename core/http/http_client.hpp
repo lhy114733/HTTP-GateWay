@@ -91,7 +91,6 @@ public:
     }
     // 设置完整响应结束回调；收到完整响应或 EOF 结束时触发。
     void SetResponseCallback(const ResponseCallback &callback) { _response_callback = callback; }
-
     // 设置流式 body 回调；设置后 body 不再累加到 Response::body。
     // 整条 HTTP 响应解析完成。 代理调用下游 writer 的 Finish()，结束这次响应
     void SetBodyCallback(const BodyCallback &callback)
@@ -110,11 +109,9 @@ public:
             _response_parser.SetBodyCallback({});
         }
     }
-
     // 设置服务端错误回调，例如连接失败、解析失败、响应被截断。
     // 建连、发送或响应解析出了错
     void SetErrorCallback(const ErrorCallback &callback) { _error_callback = callback; }
-
     // 连接真正关闭后调用；HttpClient 至少要活到这个回调。
     void SetClosedCallback(const ClosedCallback &callback) { _closed_callback = callback; }
 
@@ -132,6 +129,8 @@ public:
         _client.Connect(timeout_sec);
         return true;
     }
+
+    void SetReadPaused(bool paused) { _client.SetReadPaused(paused); }
 
     // 优雅关闭：把已排队的输出发完后断开。
     void Close()
@@ -230,10 +229,9 @@ private:
         if (_state == State::kDone) return;
         _state = State::kDone;
 
-        // 先关闭连接，保证 Connection::Release 的 queued task 排在
-        // 上层“销毁 ProxySession”之前；否则 closed 回调
-        // 会打到已释放的 HttpClient 上。
-        if (!from_eof) _client.Disconnect();
+        // 每条上游连接只服务一个请求。响应已结束，排队关闭，
+        // 让关闭回调先于代理事务清理，即使请求字节仍有积压。
+        if (!from_eof) _client.Abort();
 
         if (_response_callback) _response_callback(_response_parser.Response());
     }
@@ -244,7 +242,7 @@ private:
         if (_state == State::kDone) return;
         _state = State::kDone;
 
-        if (close_connection) _client.Disconnect();
+        if (close_connection) _client.Abort();
 
         if (_error_callback) _error_callback(message);
     }

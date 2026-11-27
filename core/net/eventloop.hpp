@@ -53,8 +53,14 @@ public:
     //channel直接调用上面这些封装好的接口，极大的简化了操作，
     //而channel本身也是一层封装，是对一个fd的要监听事件、就绪事件、事件触发回调函数的封装，这层封装也极大简化了操作
     //  根据上面来看，channel难道是poller的上层？？？毕竟poller更接近系统层，哈希表看成中间层
-    void UpdateChannel(Channel* channel) 
+    void UpdateChannel(Channel* channel)
     {
+        // 暂停读且无待发数据时，摘掉 Channel，避免持续收到挂断通知。
+        if (channel->Event() == 0)
+        {
+            RemoveChannel(channel);
+            return;
+        }
         auto it = _channels.find(channel->Fd());
         if(it == _channels.end())
         {
@@ -198,11 +204,13 @@ public:
         }
     }
 
+    bool IsInLoopThread() const { return _thread_id == std::this_thread::get_id(); }
+
     //判断要执行任务是否在当前线程，在就执行，不在就加入任务队列
     void RunInLoop(const functor& func)
     {
         //在线程内直接执行
-        if(_thread_id == std::this_thread::get_id()) { func(); }
+        if (IsInLoopThread()) { func(); }
         else  
         {
             QueueInLoop(func);
