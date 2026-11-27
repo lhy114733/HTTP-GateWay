@@ -7,7 +7,7 @@
 //   make
 //   ./build/http_server_test 8080
 
-#include "../adapter/downstream/http_server.hpp"
+#include "../core/http/http_server.hpp"
 
 #include <cstdio>
 #include <cstdlib>

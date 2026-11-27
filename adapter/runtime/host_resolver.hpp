@@ -15,7 +15,7 @@
 //   HostResolver::ResolveOnce("api.deepseek.com", 80, addresses);
 //
 // 运行期不要再调用 getaddrinfo：它是阻塞的，会卡住 Eventloop 线程。
-// 解析结果由调用方保存，HttpClientSession 只拿数字 IP 去 connect；
+// 解析结果由调用方保存，HttpClient 只拿数字 IP 去 connect；
 // HTTP 的 Host 头仍然使用域名。
 class HostResolver
 {

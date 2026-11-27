@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../adapter/upstream/http_client_session.hpp"
+#include "../core/http/http_client.hpp"
 #include "../core/http/http_message.hpp"
 #include "../core/http/http_response_writer.hpp"
 
@@ -20,7 +20,7 @@ namespace proxy
 
 // 一次 HTTP 代理请求的事务对象。
 //
-// 这里直接依赖 HttpClientSession 和 HttpResponseWriter。
+// 这里直接依赖 HttpClient 和 HttpResponseWriter。
 // 不再有 UpstreamClient / DownstreamSink 端口和对应的 adapter 包装。
 class ProxySession : public std::enable_shared_from_this<ProxySession>
 {
@@ -28,7 +28,7 @@ public:
     using DoneCallback = std::function<void()>;
     using WriterMode = http::HttpResponseWriter::BodyMode;
 
-    ProxySession(std::unique_ptr<HttpClientSession> upstream,
+    ProxySession(std::unique_ptr<HttpClient> upstream,
                  std::shared_ptr<http::HttpResponseWriter> downstream,
                  http::HttpRequest request)
         : _request(std::move(request)),
@@ -246,7 +246,7 @@ private:
     }
 
     http::HttpRequest _request;
-    std::unique_ptr<HttpClientSession> _upstream;
+    std::unique_ptr<HttpClient> _upstream;
     std::shared_ptr<http::HttpResponseWriter> _downstream;
 
     WriterMode _mode = WriterMode::kNone;

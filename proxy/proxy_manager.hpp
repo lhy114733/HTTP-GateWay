@@ -17,7 +17,7 @@ namespace proxy
 //
 // ProxySession 自己不再自持有；生命周期由 manager 负责。
 // manager 用 Post 把“移除 session”排到下一轮 loop，
-// 避免在 HttpClientSession 的回调栈里析构 ProxySession。
+// 避免在 HttpClient 的回调栈里析构 ProxySession。
 class ProxyManager
 {
 public:
@@ -26,7 +26,7 @@ public:
     ProxyManager() = default;
 
     std::shared_ptr<ProxySession> Start(
-        std::unique_ptr<HttpClientSession> upstream,
+        std::unique_ptr<HttpClient> upstream,
         std::shared_ptr<http::HttpResponseWriter> downstream,
         http::HttpRequest request,
         Post post = {})
@@ -44,14 +44,8 @@ public:
         }
 
         session->SetDoneCallback([this, id, post]() {
-            if (post)
-            {
-                post([this, id]() { Remove(id); });
-            }
-            else
-            {
-                Remove(id);
-            }
+            if (post) { post([this, id]() { Remove(id); }); }
+            else { Remove(id); }
         });
 
         session->Start(); // 开始发送

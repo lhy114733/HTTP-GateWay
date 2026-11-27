@@ -1,9 +1,9 @@
 #pragma once
 
-#include "../../core/http/http_request_parser.hpp"
-#include "../../core/http/http_response_writer.hpp"
-#include "../../core/net/buffer.hpp"
-#include "../../core/net/connection.hpp"
+#include "http_request_parser.hpp"
+#include "http_response_writer.hpp"
+#include "../net/buffer.hpp"
+#include "../net/connection.hpp"
 
 #include <functional>
 #include <memory>
@@ -19,13 +19,26 @@ class HttpServerSession : public std::enable_shared_from_this<HttpServerSession>
 {
 public:
     using ConnectionPtr = std::shared_ptr<Connection>;
-    using RequestHandler =
-        std::function<void(const http::HttpRequest &, http::HttpResponseWriter &)>;
+    using RequestHandler = std::function<void(const http::HttpRequest &, http::HttpResponseWriter &)>;
     using CancelCallback = std::function<void()>;
     using AsyncRequestHandler = std::function<CancelCallback(
         const http::HttpRequest &,
         std::shared_ptr<http::HttpResponseWriter>,
         const ConnectionPtr &)>;
+
+private:
+    ConnectionPtr _conn; // 管理的链接
+    http::HttpRequestParser _parser;
+    RequestHandler _handler; // 同步处理
+    AsyncRequestHandler _async_handler; // 异步处理
+
+    bool _awaiting_response = false; // 当前是否正在等待一个异步响应完成
+    bool _keep_alive = true; // 保存当前异步请求的 keep-alive 结果
+    bool _closed = false; // 表示 session 是否已经关闭
+    Buffer *_pending_buffer = nullptr; // 已发出但尚未收到响应”的 I/O 操作,指向连接当前的输入 Buffer
+    CancelCallback _cancel;
+
+public:
 
     HttpServerSession(ConnectionPtr conn, RequestHandler handler,
                       AsyncRequestHandler async_handler = {})
@@ -50,8 +63,7 @@ public:
 
         if (_cancel)
         {
-            auto cancel = std::move(_cancel);
-            cancel();
+            _cancel();
         }
     }
 
@@ -73,17 +85,8 @@ public:
             size_t used = 0;
             const http::ParseStatus status = _parser.Parse(view, used);
 
-            if (used > view.size())
-            {
-                // 解析失败时 buffer 里可能还有坏数据；先清掉，避免 Shutdown()
-                // 又把 _in_buffer 喂回 message callback，造成错误路径递归。
-                in->MoveReadIdx(in->AbleReadSpace());
-                SendParseError(http::ParseError::kMalformed);
-                return;
-            }
-
             in->MoveReadIdx(used);
-            view.remove_prefix(used);
+            view.remove_prefix(used); // 移除前缀
 
             if (status == http::ParseStatus::NeedMore) return;
             if (status == http::ParseStatus::Error)
@@ -93,18 +96,20 @@ public:
                 return;
             }
 
+            // 到这里说明至少解析出来了一个报文
             const bool keep_alive = _parser.Request().keep_alive;
 
             if (_async_handler)
             {
                 http::HttpRequest request = _parser.Request();
+                // 异步的writer必须活着，所以不能放到栈上，用智能指针
                 auto writer = std::make_shared<http::HttpResponseWriter>(
                     [conn = _conn](const char *data, size_t len) {
                         conn->Send(data, len);
                     },
                     keep_alive);
 
-                _awaiting_response = true;
+                _awaiting_response = true; // 异步等待标志
                 _keep_alive = keep_alive;
                 _pending_buffer = in;
                 _parser.Reset();
@@ -118,38 +123,36 @@ public:
                 return;
             }
 
+            // 给同步handler用的writer
             http::HttpResponseWriter writer(
                 [conn = _conn](const char *data, size_t len) {
                     conn->Send(data, len);
                 },
                 keep_alive);
-
-            // 走到这里说明已经通过_parser收到一个完整的httprequest报文，
+            // 执行用户回调，这个回调必须完成报文发送
             if (_handler)
             {
                 _handler(_parser.Request(), writer); 
                 // 第一个参数是接收到的http请求报文，对这个报文做处理， 
                 // 第二个参数决定向哪个_conn里写，因为WriteHeader()和WriteBody()就是Send()
             }
-
-            // handler 忘了写响应时兜底一个 500，避免连接空等。
-            if (!writer.header_sent())
-            {
-                writer.WriteHeader(500, "Internal Server Error", http::HeaderMap{},
-                                   http::HttpResponseWriter::BodyMode::kNone);
-            }
+            // 发送完了，调用发送结束
             writer.Finish();
 
+            // 重置_parser才可以解析下一个报文
             _parser.Reset();
 
+            // 对端不支持长连接的话，处理一个报文直接关闭连接
             if (!keep_alive)
             {
                 // 关闭前清掉可能残留的 pipelined 字节，避免 Shutdown() 再触发解析。
+                // 因为对端可能不遵守短链接，一下发了好几个报文
                 in->MoveReadIdx(in->AbleReadSpace());
                 _conn->Shutdown();
                 return;
             }
 
+            // 正好处理完整数个报文的情况
             if (view.empty()) return;
         }
     }
@@ -178,41 +181,43 @@ private:
         if (in != nullptr) OnData(in);
     }
 
-    void SendParseError(http::ParseError error)
+    // 客户端错误，发送400响应报文
+    void SendParseError(http::RequestParseError error)
     {
+        // 设置响应报文的参数
         int status = 400;
         std::string_view reason = "Bad Request";
         std::string body = "bad request\n";
-
         switch (error)
         {
-        case http::ParseError::kHeaderTooLarge:
+        case http::RequestParseError::kHeaderTooLarge:
             status = 431;
             reason = "Request Header Fields Too Large";
             body = "request header too large\n";
             break;
-        case http::ParseError::kBodyTooLarge:
+        case http::RequestParseError::kBodyTooLarge:
             status = 413;
             reason = "Payload Too Large";
             body = "request body too large\n";
             break;
-        case http::ParseError::kUnsupportedTransferEncoding:
+        case http::RequestParseError::kUnsupportedTransferEncoding:
             status = 501;
             reason = "Not Implemented";
             body = "transfer-encoding not supported\n";
             break;
-        case http::ParseError::kBadContentLength:
-        case http::ParseError::kMalformed:
-        case http::ParseError::kNone:
+        case http::RequestParseError::kBadContentLength:
+        case http::RequestParseError::kMalformed:
+        case http::RequestParseError::kNone:
             break;
         }
 
         http::HeaderMap headers;
         headers.Add("Content-Type", "text/plain; charset=utf-8");
 
+        // 发送做好的响应报文
         http::HttpResponseWriter writer(
             [conn = _conn](const char *data, size_t len) {
-                conn->Send(data, len);
+                conn->Send(data, len); // 设置writer的发送方式，实现了耦合，连接起来了http和tcp
             },
             false);
 
@@ -221,17 +226,7 @@ private:
         writer.WriteBody(body.data(), body.size());
         writer.Finish();
 
+        // 通知tcp，关闭连接
         _conn->Shutdown();
     }
-
-    ConnectionPtr _conn;
-    http::HttpRequestParser _parser;
-    RequestHandler _handler;
-    AsyncRequestHandler _async_handler;
-
-    bool _awaiting_response = false;
-    bool _keep_alive = true;
-    bool _closed = false;
-    Buffer *_pending_buffer = nullptr;
-    CancelCallback _cancel;
 };

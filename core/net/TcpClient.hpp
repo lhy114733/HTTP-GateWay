@@ -20,10 +20,9 @@
 class TcpClient
 {
 public:
-    using ConnectionPtr = std::shared_ptr<Connection>;
-    using ConnectedCallback = std::function<void(const ConnectionPtr&)>;
-    using MessageCallback = std::function<void(const ConnectionPtr&, Buffer*)>;
-    using ClosedCallback = std::function<void(const ConnectionPtr&)>;
+    using ConnectedCallback = std::function<void(const std::shared_ptr<Connection>&)>;
+    using MessageCallback = std::function<void(const std::shared_ptr<Connection>&, Buffer*)>;
+    using ClosedCallback = std::function<void(const std::shared_ptr<Connection>&)>;
     using ConnectErrorCallback = std::function<void(int err)>;
 
     TcpClient(Eventloop* loop, uint16_t port, std::string ip)
@@ -96,7 +95,7 @@ private:
 
     Eventloop* _loop;
     Connector _connector;
-    ConnectionPtr _conn;
+    std::shared_ptr<Connection> _conn; // 管理自己的Connection
     uint64_t _conn_id;
     bool _aborted = false;
 

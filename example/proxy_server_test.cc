@@ -19,8 +19,8 @@
 //   参数依次是：代理端口、上游 Host 端口、上游域名、连接 IP、连接端口。
 
 #include "../adapter/runtime/host_resolver.hpp"
-#include "../adapter/upstream/http_client_session.hpp"
-#include "../adapter/downstream/http_server.hpp"
+#include "../core/http/http_client.hpp"
+#include "../core/http/http_server.hpp"
 #include "../gateway/auth.hpp"
 #include "../gateway/config.hpp"
 #include "../proxy/proxy_manager.hpp"
@@ -110,7 +110,7 @@ int main(int argc, char *argv[])
          upstream_host, upstream_port, connect_ip, connect_port](
             const http::HttpRequest &request,
             std::shared_ptr<http::HttpResponseWriter> writer,
-            const std::shared_ptr<Connection> &conn) -> std::function<void()> 
+            const std::shared_ptr<Connection> & conn) -> std::function<void()> 
             {
                 // 对于收到的报文先身份识别
                 const gateway::AuthResult auth = authenticator.Authenticate(request);
@@ -126,12 +126,12 @@ int main(int argc, char *argv[])
                 http::HttpRequest upstream_request = request;
                 upstream_request.headers.Remove("authorization");
                 upstream_request.headers.Remove("proxy-authorization");
+                upstream_request.headers.Set(
+                    "Authorization", "Bearer " + gateway_config.provider_key);
 
-                auto upstream = std::make_unique<HttpClientSession>(
+                auto upstream = std::make_unique<HttpClient>(
                     conn->GetLoop(), upstream_host, upstream_port,
                     connect_ip, connect_port);
-                upstream->SetUpstreamAuth(
-                    "Authorization", "Bearer " + gateway_config.provider_key);
 
                 auto post = [loop = conn->GetLoop()](std::function<void()> task) {
                     loop->QueueInLoop(std::move(task));

@@ -32,6 +32,17 @@
 namespace http
 {
 
+// 请求解析错误；只由 HttpRequestParser 产生。
+enum class RequestParseError
+{
+    kNone,
+    kMalformed,                   // 400
+    kHeaderTooLarge,              // 431
+    kBodyTooLarge,                // 413
+    kUnsupportedTransferEncoding, // 501
+    kBadContentLength             // 400
+};
+
 class HttpRequestParser
 {
 private:
@@ -44,6 +55,14 @@ private:
         kComplete,
         kError
     };
+    size_t _max_header;
+    size_t _max_body;
+    size_t _max_headers;
+
+    State _state = State::kHeaders; // 正常状态
+    HttpRequest _request; // 最终的报文
+    size_t _body_remaining = 0;
+    RequestParseError _error = RequestParseError::kNone; // 错误状态，错误
 
 public:
     explicit HttpRequestParser(size_t max_header = 16 * 1024,
@@ -63,7 +82,7 @@ public:
         if (_state == State::kComplete)
         {
             // 调用方忘了 Reset；不能把下一条请求静默丢掉。
-            return Fail(ParseError::kMalformed, consumed); //有啥用？
+            return Fail(RequestParseError::kMalformed, consumed); //有啥用？
         }
 
         size_t used = 0;
@@ -92,17 +111,17 @@ public:
                 headers.data(), &num_headers, 0);
 
             if (ret == -2) return ParseStatus::NeedMore;
-            if (ret == -1) return Fail(ParseError::kMalformed, consumed);
+            if (ret == -1) return Fail(RequestParseError::kMalformed, consumed);
 
             // header总字节总数大于max_header，或http版本大于1.1
             const size_t header_len = static_cast<size_t>(ret);
             if (header_len > _max_header)
             {
-                return Fail(ParseError::kHeaderTooLarge, consumed);
+                return Fail(RequestParseError::kHeaderTooLarge, consumed);
             }
             if (minor_version != 0 && minor_version != 1)
             {
-                return Fail(ParseError::kMalformed, consumed);
+                return Fail(RequestParseError::kMalformed, consumed);
             }
 
             // 解析头没问题，填入_request报文请求行和头
@@ -121,7 +140,7 @@ public:
                 {
                     if (!_request.headers.AppendToLastValue(value))
                     {
-                        return Fail(ParseError::kMalformed, consumed);
+                        return Fail(RequestParseError::kMalformed, consumed);
                     }
                     continue;
                 }
@@ -137,17 +156,17 @@ public:
             // 两者都有->错误
             if (has_transfer_encoding && content_length_count > 0)
             {
-                return Fail(ParseError::kBadContentLength, consumed);
+                return Fail(RequestParseError::kBadContentLength, consumed);
             }
             // 只有content_length_count，不支持传输编码（chunk）
             if (has_transfer_encoding)
             {
-                return Fail(ParseError::kUnsupportedTransferEncoding, consumed);
+                return Fail(RequestParseError::kUnsupportedTransferEncoding, consumed);
             }
             // content_length_count数量大于2
             if (content_length_count > 1)
             {
-                return Fail(ParseError::kBadContentLength, consumed);
+                return Fail(RequestParseError::kBadContentLength, consumed);
             }
 
             // 正好一个content_length，获得body_len
@@ -157,11 +176,11 @@ public:
                 const std::string *value = _request.headers.Get("content-length");
                 if (value == nullptr || !ParseContentLength(*value, body_len))
                 {
-                    return Fail(ParseError::kBadContentLength, consumed);
+                    return Fail(RequestParseError::kBadContentLength, consumed);
                 }
                 if (body_len > _max_body)
                 {
-                    return Fail(ParseError::kBodyTooLarge, consumed);
+                    return Fail(RequestParseError::kBodyTooLarge, consumed);
                 }
             }
 
@@ -216,19 +235,19 @@ public:
 
     const HttpRequest &Request() const { return _request; } // 获得报文
 
-    ParseError error() const { return _error; } // 获得错误状态(错误码)
+    RequestParseError error() const { return _error; } // 获得错误状态(错误码)
 
     void Reset()
     {
         _request = HttpRequest{};
         _state = State::kHeaders;
         _body_remaining = 0;
-        _error = ParseError::kNone;
+        _error = RequestParseError::kNone;
     }
 
 private:
     // 主要用于设置错误状态，只要有一个错误，整个连接就废了
-    ParseStatus Fail(ParseError error, size_t &consumed)
+    ParseStatus Fail(RequestParseError error, size_t &consumed)
     {
         // 出错时整条连接都会关闭，不需要再让调用方推进 buffer。
         consumed = 0;
@@ -273,15 +292,6 @@ private:
                 _request.headers.HasToken("connection", "keep-alive") && !close;
         }
     }
-
-    size_t _max_header;
-    size_t _max_body;
-    size_t _max_headers;
-
-    State _state = State::kHeaders; // 正常状态
-    HttpRequest _request; // 最终的报文
-    size_t _body_remaining = 0;
-    ParseError _error = ParseError::kNone; // 错误状态，错误码
 };
 
 } // namespace http

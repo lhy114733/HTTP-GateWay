@@ -11,6 +11,9 @@ core/http/
 ├── http_response_writer.hpp  # 下游响应序列化
 ├── http_request_writer.hpp   # 上游请求序列化
 ├── http_response_parser.hpp  # 上游响应解析
+├── http_server.hpp           # 下游 HTTP 服务端适配
+├── http_server_session.hpp   # 下游连接级 HTTP 会话
+├── http_client.hpp           # 上游 HTTP 客户端
 ├── example.cc                # pico 原始示例
 ├── Makefile
 └── README.md
@@ -20,6 +23,10 @@ core/http/
 - 版本：`v1.5`（tag `v1.5`）
 - 许可：MIT 或 Perl 双许可（完整 MIT 文本在 `picohttpparser.h` 顶部）
 - 大小：`picohttpparser.c` 约 28KB、`picohttpparser.h` 约 4KB
+
+其中 `http_message.hpp` / parser / writer 仍是纯 codec，不依赖网络层；
+`http_server.hpp` / `http_server_session.hpp` / `http_client.hpp` 是 HTTP 与
+`core/net` 的适配层。
 
 它比 llhttp 简单的地方：
 

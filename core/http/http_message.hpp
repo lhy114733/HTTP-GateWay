@@ -217,25 +217,12 @@ struct HttpResponse
     }
 };
 
-// ParseStatus是调用Parse()返回的，配合consumed；ParseError是在类里记录的，需要自己看
+// 通用解析结果；具体错误类型由各 parser 自己定义。
 enum class ParseStatus
 {
     NeedMore,
     Complete,
     Error
-};
-
-// Status(StatusChunk)，这是类内部用来记录状态的，这里的两个是给上层看的！！！！
-
-// ParseStatus是调用Parse()返回的，配合consumed；ParseError是在类里记录的，需要自己看
-enum class ParseError
-{
-    kNone,
-    kMalformed,                   // 400
-    kHeaderTooLarge,              // 431
-    kBodyTooLarge,                // 413
-    kUnsupportedTransferEncoding, // 501
-    kBadContentLength             // 400
 };
 
 } // namespace http

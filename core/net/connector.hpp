@@ -26,10 +26,31 @@
 // StartConnect，内部会通过 RunInLoop 投递，但对象本身必须活到回调结束。
 class Connector
 {
-public:
+private:
+enum State
+    {
+        DISCONNECTED,
+        CONNECTING,
+        CONNECTED,
+        FAILED
+    };
     using ConnectedCallback = std::function<void(int fd)>;
     using ErrorCallback = std::function<void(int err)>;
+    Eventloop* _loop;
+    uint16_t _port;
+    std::string _ip;
 
+    Socket _socket;
+    std::unique_ptr<Channel> _channel;
+    uint64_t _timer_id;
+
+    State _state;
+    bool _channel_removed; // 防止析构时把 Connection 新挂上的同 fd Channel 删掉
+
+    ConnectedCallback _on_connected; // connect成功回调
+    ErrorCallback _on_error; // connect失败回调
+
+public:
     Connector(Eventloop* loop, uint16_t port, std::string ip)
         : _loop(loop), _port(port), _ip(std::move(ip)),
           _socket(), _channel(nullptr), _timer_id(0),
@@ -86,13 +107,6 @@ public:
     }
 
 private:
-    enum State
-    {
-        DISCONNECTED,
-        CONNECTING,
-        CONNECTED,
-        FAILED
-    };
 
     void StartConnectInLoop(int timeout_sec)
     {
@@ -214,20 +228,6 @@ private:
         static std::atomic<uint64_t> next{1ULL << 63};
         return next.fetch_add(1);
     }
-
-    Eventloop* _loop;
-    uint16_t _port;
-    std::string _ip;
-
-    Socket _socket;
-    std::unique_ptr<Channel> _channel;
-    uint64_t _timer_id;
-
-    State _state;
-    bool _channel_removed; // 防止析构时把 Connection 新挂上的同 fd Channel 删掉
-
-    ConnectedCallback _on_connected; // connect成功回调
-    ErrorCallback _on_error; // connect失败回调
 };
 
 
