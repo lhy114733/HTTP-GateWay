@@ -83,7 +83,7 @@ private:
     HeadersCallback _headers_callback;
     BodyCallback _body_callback;
     bool _headers_notified = false;
-    bool _expect_no_body = false;
+    bool _expect_no_body = false; // 预计是无头的，不管body
 
     // chunk相关状态
     ChunkState _chunk_state = ChunkState::kSizeLine;
@@ -99,11 +99,7 @@ public:
     }
 
     // headers 解析完成、body 开始前调用；异步代理用它在 body 前写下游响应头。
-    void SetHeadersCallback(HeadersCallback callback)
-    {
-        _headers_callback = std::move(callback);
-    }
-
+    void SetHeadersCallback(HeadersCallback callback) { _headers_callback = std::move(callback); }
     // 设置后 body 不再累加到 Response().body，而是逐块回调（SSE 用）。
     void SetBodyCallback(BodyCallback callback) { _body_callback = std::move(callback); }
 
@@ -141,7 +137,16 @@ public:
                 &reason, &reason_len,
                 headers.data(), &num_headers, 0);
 
-            if (ret == -2) return ParseStatus::NeedMore;
+            if (ret == -2)
+            {
+                // 头部还没解析完时，bytes 全部属于头部前缀；这里不检查的话，
+                // 上游可以一直不发空行，让缓冲区无限增长。
+                if (bytes.size() >= _max_header)
+                {
+                    return Fail(ResponseParseError::kHeaderTooLarge, consumed);
+                }
+                return ParseStatus::NeedMore;
+            }
             if (ret == -1) return Fail(ResponseParseError::kMalformed, consumed);
 
             const size_t header_len = static_cast<size_t>(ret); // headers总字节数
@@ -326,11 +331,8 @@ public:
     }
 
 private:
-    // 判断response响应状态码
-    static bool IsNoBodyStatus(int status)
-    {
-        return (status >= 100 && status < 200) || status == 204 || status == 304;
-    }
+    // 无body的响应码
+    static bool IsNoBodyStatus(int status) { return (status >= 100 && status < 200) || status == 204 || status == 304; }
 
     ParseStatus Fail(ResponseParseError error, size_t &consumed)
     {

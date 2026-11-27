@@ -19,9 +19,7 @@ public:
     // 这些Header不怕被重复添加吗？？
     // host 是 Host header，例如 "api.deepseek.com" 或 "127.0.0.1:8080"。
     // 为空时尝试用 request.headers 里的 Host。
-    static std::string Build(const HttpRequest &request,
-                             std::string_view host,
-                             bool keep_alive = false)
+    static std::string Build(const HttpRequest &request, std::string_view host, bool keep_alive = false)
     {
         const std::string_view method =
             request.method.empty() ? std::string_view("GET") : std::string_view(request.method);
@@ -80,7 +78,6 @@ public:
     }
 
 private:
-    // 有啥用？
     static bool IsSkippedHeader(std::string_view name)
     {
         // 这些要么由 writer 重新生成，要么是逐跳 header，不能透传给上游。

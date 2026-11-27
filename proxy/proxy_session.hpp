@@ -204,8 +204,7 @@ private:
         auto self = shared_from_this(); // 保证 done_callback 返回前对象还活着
         (void)self;
 
-        auto callback = std::move(_done_callback);
-        if (callback) callback();
+        if (_done_callback) _done_callback();
     }
 
     static bool IsNoBodyStatus(int status)

@@ -118,6 +118,7 @@ public:
     // 连接真正关闭后调用；HttpClient 至少要活到这个回调。
     void SetClosedCallback(const ClosedCallback &callback) { _closed_callback = callback; }
 
+    // 只是把request放到_request，没有发送，HandleConnected后才发
     // 异步：连接建立后自动发送；收到完整响应后回调 ResponseCallback。
     bool Send(const http::HttpRequest &request, int timeout_sec = 3)
     {
@@ -175,7 +176,8 @@ private:
         std::string_view view(in->ReadPositon(), static_cast<size_t>(in->AbleReadSpace()));
         size_t used = 0;
 
-        const http::ParseStatus status = _response_parser.Parse(view, used);
+        // Parse中设置了回调(ProxySession设置的业务回调)，包含了对header、body的处理，这里返回的时候已经执行了回调了
+        const http::ParseStatus status = _response_parser.Parse(view, used); 
         in->MoveReadIdx(used);
 
         if (status == http::ParseStatus::NeedMore) return;
@@ -186,6 +188,7 @@ private:
             return;
         }
 
+        // 走到这里说明ParseStatus为Complete
         FinishResponse(false);
     }
 

@@ -110,7 +110,16 @@ public:
                 &minor_version,
                 headers.data(), &num_headers, 0);
 
-            if (ret == -2) return ParseStatus::NeedMore;
+            if (ret == -2)
+            {
+                // 头部还没解析完时，bytes 全部属于头部前缀；这里不检查的话，
+                // 客户端可以一直不发空行，让缓冲区无限增长。
+                if (bytes.size() >= _max_header)
+                {
+                    return Fail(RequestParseError::kHeaderTooLarge, consumed);
+                }
+                return ParseStatus::NeedMore;
+            }
             if (ret == -1) return Fail(RequestParseError::kMalformed, consumed);
 
             // header总字节总数大于max_header，或http版本大于1.1

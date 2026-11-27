@@ -290,9 +290,9 @@ class LoopThread
 {
 private:
     Eventloop* _loop;
-    std::thread _thread;
     std::mutex _mutex;
     std::condition_variable _cond;
+    std::thread _thread;
 private:
     void ThreadEntry()
     {
