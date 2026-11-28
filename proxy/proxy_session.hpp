@@ -28,6 +28,7 @@ public:
     using DoneCallback = std::function<void()>;
     using WriterMode = http::HttpResponseWriter::BodyMode;
 
+    // ProxySession需要一个给下游发数据的东西，就是HttpResponseWriter
     ProxySession(std::unique_ptr<HttpClient> upstream,
                  std::shared_ptr<http::HttpResponseWriter> downstream,
                  http::HttpRequest request,

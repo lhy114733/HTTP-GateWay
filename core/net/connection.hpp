@@ -20,7 +20,7 @@ private:
     bool _enable_inactive_release;
     Buffer _in_buffer; //读缓冲区
     Buffer _out_buffer; //写缓冲区
-    bool _read_paused = false;
+    bool _read_paused = false; // 用于暂停读，是用来控制的，本身不一定所处的连接属于背压状态才会被调用
     bool _output_aborted = false;
     bool _output_pressured = false;
     size_t _output_low = 0;
@@ -84,16 +84,12 @@ private:
             return;
         }
 
-        // 这里可以用Buffer的Read读出来数据再发送。这里直接用Position省了一步，还要自己移动索引，
-        // 没看出Buffer的Read的意义是啥，垃圾代码，封装性太差
         ssize_t ret = _socket.Send(_out_buffer.ReadPositon(), _out_buffer.AbleReadSpace());
-        if(ret < 0 )
-        {
-            // 发送出错了，数据发不出去了，直接release()
-            return Release();
-        }
+        // 发送出错了，数据发不出去了，直接release()
+        if(ret < 0 ) { return Release(); }
         _out_buffer.MoveReadIdx(ret);
-        UpdateOutputPressure();
+        // 积压可能变小，改变积压
+        UpdateOutputPressure(); 
         // 第一次开启写监听是第一次调Send的时候，必须直到发送完才结束写监听，要一直发送的。等到输出缓冲区里有数据了再打开写监听。
         // 而读监听是一直打开的
         // 理解，读数据是一有数据发来就要读并且处理，所以一直要都监听；
@@ -102,10 +98,8 @@ private:
         {
             _channel.DisableWriteMonitor();
             // 如果要已经是半关闭状态，说明没有新数据到来，发送缓冲区里没东西就直接关闭连接了
-            if(_status == DISCONNECTING)
-            {
-                Release();// 数据已发完直接调用真正的断开连接
-            }
+            // 数据已发完直接调用真正的断开连接
+            if(_status == DISCONNECTING) { Release(); }
         }
     }
     void HandleClose()
@@ -119,9 +113,9 @@ private:
 
         if(_in_buffer.AbleReadSpace() > 0 && _message_callback)
         {
-            _message_callback(shared_from_this(),&_in_buffer);
+            _message_callback(shared_from_this(), &_in_buffer);
         }
-        Release(); // 如果用户处理完_in_buffer里的还要Send怎么办，这不是就发不出去了吗？？？
+        Release(); // 如果用户处理完_in_buffer里的还要Send怎么办，这不是就发不出去了吗？？？连接已经关了，本来就发不出去了
     }
     void HandleError()
     {
@@ -133,6 +127,7 @@ private:
         if (_event_callback)  {  _event_callback(shared_from_this()); }
     }
 
+    // 更新积压
     void UpdateOutputPressure()
     {
         if (_output_limit == 0) return;
@@ -142,6 +137,7 @@ private:
         if (pressured == _output_pressured) return;
 
         _output_pressured = pressured;
+        // 进入背压状态回调
         if (_output_pressure_callback) _output_pressure_callback(pressured);
     }
 
@@ -149,9 +145,9 @@ private:
     {
         if (_status == DISCONNECTED || _output_aborted) return;
 
+        // _out_buffer带发送数据大于_output_limit，设置为_output_aborted，关闭连接
         const auto pending = _out_buffer.AbleReadSpace();
-        if (_output_limit != 0 &&
-            (pending > _output_limit || len > _output_limit - pending))
+        if (_output_limit != 0 && (pending > _output_limit || len > _output_limit - pending))
         {
             _output_aborted = true;
             Release();
@@ -160,6 +156,7 @@ private:
 
         _out_buffer.Write(data, len);
         if (!_channel.WriteAble()) _channel.EnableWriteMonitor();
+        // 向_out_buffer里写入，积压变大，更新积压
         UpdateOutputPressure();
     }
 
@@ -190,9 +187,9 @@ public:
     int Id() { return _conn_id; }
     Eventloop *GetLoop() { return _loop; }
 
+    // 设置水位，以及背压状态回调函数
     // 在所属 loop 上设置，回调可能立即报告当前连接仍有积压。
-    void SetOutputWatermarks(size_t low, size_t high, size_t limit,
-                             std::function<void(bool)> callback)
+    void SetOutputWatermarks(size_t low, size_t high, size_t limit, std::function<void(bool)> callback)
     {
         assert(_loop->IsInLoopThread());
         assert(low < high && high < limit);
@@ -202,12 +199,14 @@ public:
         _output_pressure_callback = std::move(callback);
 
         const auto pending = _out_buffer.AbleReadSpace();
+        // 根据_out_buffer的可读空间，改变背压状态
         _output_pressured = _output_pressured ? pending > low : pending >= high;
         if (_output_pressured && _output_pressure_callback) _output_pressure_callback(true);
     }
 
     bool OutputAborted() const { return _output_aborted; }
 
+    // 启动或关闭paused
     void SetReadPaused(bool paused)
     {
         assert(_loop->IsInLoopThread());

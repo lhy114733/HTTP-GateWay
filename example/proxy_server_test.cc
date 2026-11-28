@@ -10,6 +10,8 @@
 //
 // 直连本地上游：
 //   ./build/http_proxy_test 8081 8080
+// 指定工作线程数（省略时使用主 Eventloop 处理 I/O）：
+//   ./build/http_proxy_test 8081 8080 --threads 4
 //
 // 指定上游域名：
 //   ./build/http_proxy_test 8081 8080 localhost
@@ -25,17 +27,18 @@
 #include "../gateway/config.hpp"
 #include "../proxy/proxy_manager.hpp"
 
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
-static void SendAuthError(
-    const std::shared_ptr<http::HttpResponseWriter> &writer,
-    const std::shared_ptr<Connection> &conn)
+static void SendAuthError(const std::shared_ptr<http::HttpResponseWriter> &writer, const std::shared_ptr<Connection> &conn)
 {
     const std::string body =
         "{\"error\":{\"message\":\"invalid api key\","
@@ -57,13 +60,66 @@ static void SendAuthError(
     });
 }
 
+static void PrintUsage(std::FILE *out, const char *program)
+{
+    std::fprintf(out,
+                 "Usage: %s [--threads N] [proxy_port [upstream_port [upstream_host "
+                 "[connect_ip [connect_port]]]]]\n"
+                 "  --threads N   Number of worker Eventloops (default: 0, main loop handles I/O).\n"
+                 "  --help        Show this message.\n",
+                 program);
+}
+
 int main(int argc, char *argv[])
 {
+    int worker_threads = 0;
+    std::vector<const char *> positional;
+    for (int i = 1; i < argc; ++i)
+    {
+        const std::string_view arg = argv[i];
+        if (arg == "--help")
+        {
+            PrintUsage(stdout, argv[0]);
+            return 0;
+        }
+        if (arg == "--threads")
+        {
+            if (++i == argc)
+            {
+                std::fprintf(stderr, "--threads requires a nonnegative integer.\n");
+                return 1;
+            }
+
+            const std::string_view count = argv[i];
+            const auto end = count.data() + count.size();
+            const auto result = std::from_chars(count.data(), end, worker_threads);
+            if (result.ec != std::errc{} || result.ptr != end || worker_threads < 0)
+            {
+                std::fprintf(stderr, "Invalid --threads value: %s\n", argv[i]);
+                return 1;
+            }
+            continue;
+        }
+        if (arg.substr(0, 2) == "--")
+        {
+            std::fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            PrintUsage(stderr, argv[0]);
+            return 1;
+        }
+        positional.push_back(argv[i]);
+    }
+
+    if (positional.size() > 5)
+    {
+        PrintUsage(stderr, argv[0]);
+        return 1;
+    }
+
     uint16_t proxy_port = 8081;
     uint16_t upstream_port = 8080;
 
-    if (argc > 1) proxy_port = static_cast<uint16_t>(std::atoi(argv[1]));
-    if (argc > 2) upstream_port = static_cast<uint16_t>(std::atoi(argv[2]));
+    if (!positional.empty()) proxy_port = static_cast<uint16_t>(std::atoi(positional[0]));
+    if (positional.size() > 1) upstream_port = static_cast<uint16_t>(std::atoi(positional[1]));
 
     setvbuf(stdout, nullptr, _IONBF, 0);
 
@@ -77,18 +133,17 @@ int main(int argc, char *argv[])
     }
     // 增加默认的gateway和tenant用来身份识别
     gateway::Authenticator authenticator;
-    authenticator.AddKey(gateway_config.gateway_key,
-                         gateway::Tenant{gateway_config.gateway_tenant});
+    authenticator.AddKey(gateway_config.gateway_key, gateway::Tenant{gateway_config.gateway_tenant});
 
     // Host 头里的域名/端口，和实际 TCP 连接地址可以不同。
     std::string upstream_host = "127.0.0.1";
-    if (argc > 3) upstream_host = argv[3];
+    if (positional.size() > 2) upstream_host = positional[2];
 
     std::string connect_host = upstream_host;
-    if (argc > 4) connect_host = argv[4];
+    if (positional.size() > 3) connect_host = positional[3];
 
     uint16_t connect_port = upstream_port;
-    if (argc > 5) connect_port = static_cast<uint16_t>(std::atoi(argv[5]));
+    if (positional.size() > 4) connect_port = static_cast<uint16_t>(std::atoi(positional[4]));
 
     // 启动阶段解析一次，后面每个请求都复用这个 IP。
     std::vector<std::string> connect_addresses;
@@ -103,7 +158,7 @@ int main(int argc, char *argv[])
 
     // 代理管理和服务器
     proxy::ProxyManager manager;
-    HttpServer proxy(proxy_port, 0);
+    HttpServer proxy(proxy_port, worker_threads);
 
     proxy.SetAsyncHandler(
         [&manager, &authenticator, gateway_config,
@@ -146,9 +201,9 @@ int main(int argc, char *argv[])
             };
         });
 
-    std::printf("HTTP proxy listening on 0.0.0.0:%u -> %s:%u (connect %s:%u)\n",
+    std::printf("HTTP proxy listening on 0.0.0.0:%u -> %s:%u (connect %s:%u, worker threads: %d)\n",
                 proxy_port, upstream_host.c_str(), upstream_port,
-                connect_ip.c_str(), connect_port);
+                connect_ip.c_str(), connect_port, worker_threads);
 
     proxy.Start();
     return 0;
